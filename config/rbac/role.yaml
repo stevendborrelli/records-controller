@@ -8,10 +8,8 @@ rules:
   - records.crossplane.io
   resources:
   - clusterschemas
-  - records
-  - recordsets
-  - schemas
   verbs:
+  - create
   - get
   - list
   - watch
@@ -26,3 +24,13 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - records.crossplane.io
+  resources:
+  - records
+  - recordsets
+  - schemas
+  verbs:
+  - get
+  - list
+  - watch

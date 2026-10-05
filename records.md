@@ -516,6 +516,8 @@ spec:
     x-kubernetes-preserve-unknown-fields: true
 ```
 
+An implementation MUST create it if it is absent, including after it is deleted. Because the contract is fixed, a recreated `rawobject-v1` has the same digest, and Records bound to it remain valid. An implementation MUST NOT replace an existing `rawobject-v1` that has a different contract, since Records may be bound to it; it SHOULD report the conflict.
+
 The contract accepts arbitrary JSON objects.
 
 If arbitrary JSON values, including arrays, strings, numbers, booleans, or null, are required in a future version, a separate contract MUST be defined rather than silently changing this contract.

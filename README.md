@@ -15,8 +15,7 @@ holds up:
 
 API group: `records.crossplane.io/v1alpha1`.
 
-Not implemented: inline schemas, `expiresAt`, `phase`, and the well-known
-`rawobject-v1` ClusterSchema.
+Not implemented: inline schemas, `expiresAt`, and `phase`.
 
 ## What enforces what
 
@@ -41,6 +40,7 @@ Not implemented: inline schemas, `expiresAt`, `phase`, and the well-known
 | Asserted digests match computed digests | Record controller |
 | Data validates against the Schema; unknown fields are rejected, not pruned | Record controller |
 | A Schema name reused for a different contract invalidates bound Records | Record controller |
+| The well-known `rawobject-v1` ClusterSchema exists, and is recreated if deleted; a conflicting one is reported, not replaced | Controller at startup, and the ClusterSchema controller |
 | Versions ordered high to low; Records exist, match publisher, `recordType`, schema, and digests, including structural digests | RecordSet controller |
 
 The contract digest covers `format` and `definition` only; the proposal does

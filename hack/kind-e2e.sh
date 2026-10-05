@@ -278,6 +278,47 @@ expect_rejected "status.dataDigest is write-once" "status.dataDigest is write-on
 	k -n "$NS" patch record asserted --subresource=status --type=merge -p "{\"status\":{\"dataDigest\":\"${BOGUS}\"}}"
 
 # ---------------------------------------------------------------------------
+step "rawobject-v1"
+# condition reads with -n, which kubectl ignores for cluster-scoped kinds.
+expect_condition "The controller provides rawobject-v1" "$NS" clusterschema rawobject-v1 Ready True/Verified
+raw_digest=$(k get clusterschema rawobject-v1 -o jsonpath='{.status.digest}')
+cat <<EOF | k apply -f - >/dev/null
+apiVersion: records.crossplane.io/v1alpha1
+kind: Record
+metadata:
+  name: free-form
+  namespace: $NS
+spec:
+  publisher:
+    id: team-network
+  recordType: notes
+  schema:
+    ref:
+      kind: ClusterSchema
+      name: rawobject-v1
+  data:
+    owner: team-a
+    nested: {list: [1, two, {three: true}]}
+EOF
+expect_condition "Any JSON object is valid against rawobject-v1" "$NS" record free-form Valid True/Verified
+
+old_uid=$(k get clusterschema rawobject-v1 -o jsonpath='{.metadata.uid}')
+k delete clusterschema rawobject-v1 --wait=true >/dev/null
+recreated=""
+for _ in $(seq 1 60); do
+	uid=$(k get clusterschema rawobject-v1 -o jsonpath='{.metadata.uid}' 2>/dev/null || true)
+	d=$(k get clusterschema rawobject-v1 -o jsonpath='{.status.digest}' 2>/dev/null || true)
+	if [[ -n $uid && $uid != "$old_uid" && $d == "$raw_digest" ]]; then
+		recreated=1
+		break
+	fi
+	sleep 1
+done
+[[ -n $recreated ]] && pass "A deleted rawobject-v1 is recreated with the same digest" ||
+	fail "A deleted rawobject-v1 is recreated with the same digest" "uid=$uid digest=$d, want a new uid and $raw_digest"
+expect_condition "Records bound to rawobject-v1 stay valid" "$NS" record free-form Valid True/Verified
+
+# ---------------------------------------------------------------------------
 step "Schema name reuse"
 schema "$NS" reused cidr | k apply -f - >/dev/null
 record "$NS" bound reused | k apply -f - >/dev/null

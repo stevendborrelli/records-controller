@@ -2,8 +2,10 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -25,6 +27,9 @@ const (
 // and ClusterSchemas.
 type SchemaReconciler struct {
 	client.Client
+	// Reader reads from the API server, bypassing the cache. It is used to
+	// recreate rawobject-v1, and is required when Cluster is true.
+	Reader client.Reader
 	// Cluster selects ClusterSchemas instead of Schemas.
 	Cluster bool
 }
@@ -56,7 +61,16 @@ func (r *SchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		s := &v1alpha1.Schema{}
 		obj, spec, status = s, &s.Spec, &s.Status
 	}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	err := r.Get(ctx, req.NamespacedName, obj)
+	if kerrors.IsNotFound(err) && r.Cluster && req.Name == RawObjectName {
+		// The well-known contract must always be provided. It is fixed, so a
+		// recreated rawobject-v1 has the digest Records were bound to.
+		if err := ensureRawObject(ctx, r, r.Reader); err != nil && !errors.Is(err, errNotRawObject) {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
