@@ -229,12 +229,19 @@ spec:
       - vpcId
 ```
 
-`networks-v1` deliberately does not declare `replaces: rawobject-v1`.
-`rawobject-v1` is shared by every free-form Record in the cluster, so a
-successor claim on it would apply to all of them, and every team that
-tightened a free-form type would add another. The migration is recorded in the
+`networks-v1` does not declare `replaces: rawobject-v1`, and Consumers would
+not act on it if it did. `replaces` is a claim the successor makes about
+someone else's Schema. If Consumers followed it, any Publisher could declare
+`replaces: rawobject-v1` and redirect every Consumer migrating away from the
+free-form contract to a Schema of their choosing. Consumers discover
+successors through `successor` instead, which only the predecessor's
+Publisher sets, and treat `replaces` as informational
+([`successor`](../records.md#successor), [`replaces`](../records.md#replaces)).
+
+Nothing names a successor for `rawobject-v1` either: every free-form Record
+shares it, so it has no single successor. The migration is recorded in the
 RecordSet instead: version 1 uses `rawobject-v1` and version 2 uses
-`networks-v1` ([`replaces`](../records.md#replaces)).
+`networks-v1`.
 
 **Assert:**
 
@@ -396,6 +403,7 @@ Rejected by the API server:
 | Rewrite an existing `versions` entry | `published version entries are immutable` |
 | Change the RecordSet's `recordType` or `recordTypeGroup` | `spec.recordType is immutable`, `spec.recordTypeGroup is immutable` |
 | Lower `highestVersion` | `highestVersion must not decrease` |
+| A namespaced Schema declaring `replaces` of `networks-v1`, a ClusterSchema | `a Schema may only replace Schemas in its own namespace` ([`replaces`](../records.md#replaces)) |
 | A Schema with `format: Avro` | `Unsupported value: "Avro"`. `v1alpha1` permits only `StructuralSchema` ([`spec.format`](../records.md#specformat)) |
 
 Reported by the controller, because they depend on other objects:
@@ -412,7 +420,7 @@ little:
 
 | Attempt | Expect |
 |---|---|
-| Add `deprecation` to `networks-v1` | accepted. `deprecation` and `replaces` are the mutable part of a Schema |
+| Add `deprecation` to `networks-v1`, or name its `successor` | accepted. `successor`, `replaces`, and `deprecation` are the mutable part of a Schema |
 | Move `current`, add to `retracted`, raise `retention.maxVersions` | accepted |
 
 ---

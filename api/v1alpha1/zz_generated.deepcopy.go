@@ -506,6 +506,11 @@ func (in *SchemaSpec) DeepCopyInto(out *SchemaSpec) {
 	*out = *in
 	out.Publisher = in.Publisher
 	in.Definition.DeepCopyInto(&out.Definition)
+	if in.Successor != nil {
+		in, out := &in.Successor, &out.Successor
+		*out = new(SchemaReference)
+		**out = **in
+	}
 	if in.Replaces != nil {
 		in, out := &in.Replaces, &out.Replaces
 		*out = make([]SchemaReference, len(*in))

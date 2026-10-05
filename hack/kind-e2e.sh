@@ -235,6 +235,15 @@ else
 	fail "Schema deprecation is mutable" "patch was rejected"
 fi
 
+if k -n "$NS" patch schema subnet-v1 --type=merge -p '{"spec":{"successor":{"kind":"Schema","name":"subnet-v2"}}}' >/dev/null 2>&1; then
+	pass "A Schema's Publisher can name its successor"
+else
+	fail "A Schema's Publisher can name its successor" "patch was rejected"
+fi
+
+expect_rejected "A Schema cannot claim to replace a ClusterSchema" "a Schema may only replace Schemas in its own namespace" \
+	k -n "$NS" patch schema immutable-probe --type=merge -p '{"spec":{"replaces":[{"kind":"ClusterSchema","name":"rawobject-v1"}]}}'
+
 expect_rejected "Deprecation date must be a full-date" "spec.deprecation.date" \
 	k -n "$NS" patch schema subnet-v1 --type=merge -p '{"spec":{"deprecation":{"date":"2027-01-01T00:00:00Z"}}}'
 

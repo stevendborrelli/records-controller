@@ -388,6 +388,19 @@ func TestSchemaContractIsImmutable(t *testing.T) {
 		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.ShapeVersion = "v2" })
 		mustReject(t, err, "spec.shapeVersion is immutable")
 	})
+	t.Run("SuccessorIsMutable", func(t *testing.T) {
+		// The predecessor's Publisher names the successor, and may name a
+		// ClusterSchema from a namespaced Schema.
+		for _, ref := range []v1alpha1.SchemaReference{
+			{Kind: v1alpha1.KindSchema, Name: "subnet-v2"},
+			{Kind: v1alpha1.KindClusterSchema, Name: "subnet-v2"},
+		} {
+			err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.Successor = &ref })
+			if err != nil {
+				t.Fatalf("naming %s %s as the successor should be allowed: %v", ref.Kind, ref.Name, err)
+			}
+		}
+	})
 	t.Run("DeprecationIsMutable", func(t *testing.T) {
 		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) {
 			u.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01", Message: "superseded by subnet-v2"}
@@ -491,6 +504,27 @@ func TestClusterSchemaCannotReplaceNamespacedSchema(t *testing.T) {
 	}
 	cs.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindSchema, Name: "subnet-v0"}}
 	mustReject(t, k8s.Create(context.Background(), cs), "a ClusterSchema may only replace ClusterSchemas")
+}
+
+// replaces is claimed by the successor, so it is confined to the claimant's
+// own namespace: a tenant cannot claim to succeed a cluster-wide contract.
+func TestSchemaCannotReplaceClusterSchema(t *testing.T) {
+	ns := namespace(t)
+	s := &v1alpha1.Schema{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "replaces-cluster"},
+		Spec:       schemaSpec(subnetV1),
+	}
+	s.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindClusterSchema, Name: RawObjectName}}
+	mustReject(t, k8s.Create(context.Background(), s), "a Schema may only replace Schemas in its own namespace")
+}
+
+func TestClusterSchemaSuccessorMustBeClusterSchema(t *testing.T) {
+	cs := &v1alpha1.ClusterSchema{
+		ObjectMeta: metav1.ObjectMeta{Name: "namespaced-successor"},
+		Spec:       schemaSpec(subnetV1),
+	}
+	cs.Spec.Successor = &v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: "subnet-v2"}
+	mustReject(t, k8s.Create(context.Background(), cs), "a ClusterSchema's successor must be a ClusterSchema")
 }
 
 // Deleting a Schema and recreating it under the same name with a different

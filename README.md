@@ -29,7 +29,7 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | `status` digests are write-once | CRD CEL transition rules |
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |
-| A ClusterSchema replaces only ClusterSchemas | CRD CEL rule |
+| `replaces` stays in scope: a Schema replaces only Schemas in its namespace, a ClusterSchema only ClusterSchemas; a ClusterSchema's `successor` is a ClusterSchema | CRD CEL rules |
 | Versions are unique and positive | CRD list-map keys and minimum |
 | `current` is published and not retracted; retracted versions are published | CRD CEL rules |
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |

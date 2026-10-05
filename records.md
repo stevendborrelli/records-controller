@@ -36,7 +36,7 @@ A `Record` contains immutable facts:
 A `Schema` contains an immutable contract plus mutable Publisher metadata describing that contract:
 
 - the lineage and compatibility group it belongs to;
-- the contracts it replaces; and
+- its successor, and the contracts it claims to replace; and
 - its deprecation state.
 
 A `RecordSet` contains mutable Publisher metadata describing a collection of immutable Records:
@@ -283,7 +283,7 @@ A namespaced `Record` MUST reference only a `Schema` in its own namespace or a `
 
 A Record is bound to the immutable contract identified by the Schema's digest, not to mutable metadata associated with the Schema.
 
-Changes to a Schema's `replaces` or `deprecation` fields therefore do not change the contract to which an existing Record is bound.
+Changes to a Schema's `successor`, `replaces`, or `deprecation` fields therefore do not change the contract to which an existing Record is bound.
 
 A Record MUST NOT be considered valid until both of its digests have been computed and recorded in `status`, and any asserted digests have been verified. If a Schema reference resolves to a contract whose digest does not match an asserted `spec.schema.digest`, the Record is invalid.
 
@@ -341,6 +341,9 @@ spec:
   replaces:
     - kind: Schema
       name: subnet-v0
+  successor:
+    kind: Schema
+    name: subnet-v2
   deprecation:
     date: "2027-01-01"
     message: "superseded by subnet-v2, which adds a required gateway"
@@ -357,6 +360,7 @@ The following properties of a Schema are immutable:
 
 The following properties are mutable Publisher assertions:
 
+- `spec.successor`;
 - `spec.replaces`; and
 - `spec.deprecation`.
 
@@ -419,17 +423,34 @@ Schema relationships have different strengths.
 | `digest` | Same canonical contract | Computation |
 | `structuralDigest` | Same validation structure, differing only in documentation | Computation |
 | `shapeGroup` + `shape` + `shapeVersion` | Publisher asserts membership in the same compatibility group | Publisher |
-| `replaces` | Publisher identifies another Schema as a predecessor | Publisher |
+| `successor` | A Schema's Publisher names the Schema that succeeds it | Publisher of the predecessor |
+| `replaces` | A Schema's Publisher claims to succeed another Schema | Publisher of the successor |
 
 The first two relationships are mechanically verifiable.
 
-The latter two are Publisher assertions and are not verified by this specification.
+The others are Publisher assertions and are not verified by this specification. They differ in who makes them, which determines whether a Consumer can rely on them.
+
+### `successor`
+
+`successor` is set by the Publisher of a Schema to name the Schema that succeeds it:
+
+```yaml
+successor:
+  kind: Schema
+  name: subnet-v2
+```
+
+A Consumer that wants to discover a successor MUST use `successor`.
+
+The claim is made by the Publisher of the Schema the Consumer already uses, so following it adds no party the Consumer did not already trust. A Publisher can change it at any time: it is a mutable assertion, like `deprecation`.
+
+`successor` follows the same scope rules as other Schema references: a `Schema` may name a `Schema` in its own namespace or a `ClusterSchema`, and a `ClusterSchema` may name only a `ClusterSchema`.
+
+`successor` does not, by itself, establish that data valid under one Schema is valid under the other, nor that a Consumer can automatically migrate between them. A Consumer MUST determine independently whether it can consume the successor. A successor may belong to a different `shapeVersion`, or a different lineage, which supports migrations where the representation or compatibility model changes.
 
 ### `replaces`
 
-`replaces` is a directed relationship.
-
-If Schema B declares:
+`replaces` is the reverse claim. If Schema B declares:
 
 ```yaml
 replaces:
@@ -437,13 +458,16 @@ replaces:
     name: schema-a
 ```
 
-then B is declaring that it is the intended successor to A.
+then B's Publisher is claiming that B succeeds A.
 
-`replaces` does not, by itself, establish that data valid under A is valid under B, nor that a Consumer can automatically migrate between them.
+The claim is made by B's Publisher, not by A's. Anyone who can create a Schema can claim to succeed any other, and `publisher.id` is itself only a claim. `replaces` is therefore informational: Consumers MUST NOT use it to discover successors, and MUST NOT follow it automatically. A forged `replaces` aimed at a widely used Schema would otherwise redirect every Consumer that migrates from it.
 
-A Consumer may use `replaces` as a migration hint, but MUST determine independently whether it can consume the successor Schema.
+To limit the reach of a claim:
 
-A Schema may replace a Schema belonging to a different `shapeVersion`. This supports migrations where the representation or compatibility model changes.
+- a `Schema` MUST replace only `Schema`s in its own namespace; and
+- a `ClusterSchema` MUST replace only `ClusterSchema`s.
+
+Implementations SHOULD also require that whoever declares `replaces` is authorized to modify the Schemas it names. On Kubernetes-compatible implementations this can be enforced at admission. Even then, `successor` remains the relationship Consumers follow.
 
 ### Deprecation
 
@@ -467,7 +491,7 @@ It is not a deadline imposed on Consumers and does not invalidate existing Recor
 
 A Consumer may continue using a deprecated Schema if doing so is appropriate for its environment.
 
-There is no machine-readable successor field in `deprecation`. Consumers that want to discover a successor may inspect the `replaces` relationship declared by newer Schemas.
+The machine-readable successor is `successor`, not part of `deprecation`, because a Schema can have a successor before it is deprecated: v2 may be published while v1 is still supported.
 
 Deprecation is intentionally not copied into a RecordSet. A Schema may be deprecated while a RecordSet continues to publish Records using that Schema.
 
@@ -748,7 +772,7 @@ For example, a Consumer that follows the current compatible Record may use the f
 
 A Consumer that requires a specific contract may instead filter available versions by Schema digest or structural digest, using the digests in each version entry without resolving the Records, or by Publisher-defined compatibility group.
 
-The Records model does not require Consumers to follow `current`, `shapeVersion`, `replaces`, or `deprecation`. These are Publisher signals, not commands.
+The Records model does not require Consumers to follow `current`, `shapeVersion`, `successor`, or `deprecation`. These are Publisher signals, not commands.
 
 ### Integration with Crossplane Compositions
 
