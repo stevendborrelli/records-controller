@@ -485,19 +485,39 @@ as_tenant() { # name shape-group [replaces-schema]
 	tenant_schema "$@" | k --as=e2e-tenant create --dry-run=server -f -
 }
 
-allowed=""
+# eventually_allowed retries a command for up to 30s while RBAC catches up.
+eventually_allowed() { # description command...
+	local desc=$1
+	shift
+	for _ in $(seq 1 30); do
+		"$@" >/dev/null 2>&1 && { pass "$desc"; return; }
+		sleep 1
+	done
+	fail "$desc" "$("$@" 2>&1)"
+}
+
+# The alpha default: permissive RBAC lets everyone publish and claim.
+eventually_allowed "Alpha default: anyone may publish under any group" as_tenant tenant-v1 network.example.org
+eventually_allowed "Alpha default: anyone may claim to replace a Schema" as_tenant tenant-v2 tenant.example.org subnet-v1
+
+# Lock down, as the README describes, then check each denial.
+k delete clusterrolebinding records-permissive --wait=true >/dev/null
+denied=""
 for _ in $(seq 1 30); do
-	as_tenant tenant-v1 tenant.example.org >/dev/null 2>&1 && { allowed=1; break; }
+	as_tenant tenant-v1 network.example.org >/dev/null 2>&1 || { denied=1; break; }
 	sleep 1
 done
-[[ -n $allowed ]] && pass "A tenant can publish under its own group" ||
-	fail "A tenant can publish under its own group" "$(as_tenant tenant-v1 tenant.example.org 2>&1)"
-expect_rejected "Publishing under another team's shapeGroup is denied" "not authorized to publish under shapeGroup network.example.org" \
+[[ -n $denied ]] || info "permissive RBAC still in effect after 30s"
+eventually_allowed "Locked down: a tenant can publish under its own group" as_tenant tenant-v1 tenant.example.org
+expect_rejected "Locked down: publishing under another team's shapeGroup is denied" "not authorized to publish under shapeGroup network.example.org" \
 	as_tenant tenant-v1 network.example.org
-expect_rejected "The reserved records.crossplane.io group is denied" "not authorized to publish under shapeGroup records.crossplane.io" \
+expect_rejected "Locked down: the reserved records.crossplane.io group is denied" "not authorized to publish under shapeGroup records.crossplane.io" \
 	as_tenant tenant-v1 records.crossplane.io
-expect_rejected "Claiming to replace another team's Schema is denied" "replaces may name only Schemas the requester is authorized to update" \
+expect_rejected "Locked down: claiming to replace another team's Schema is denied" "replaces may name only Schemas on which the requester has the replace verb" \
 	as_tenant tenant-v2 tenant.example.org subnet-v1
+
+# Restore the alpha default.
+k apply -k "$ROOT/config/policy" >/dev/null
 
 # ---------------------------------------------------------------------------
 step "Result"

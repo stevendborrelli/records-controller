@@ -467,7 +467,7 @@ To limit the reach of a claim:
 - a `Schema` MUST replace only `Schema`s in its own namespace; and
 - a `ClusterSchema` MUST replace only `ClusterSchema`s.
 
-Implementations SHOULD also require that whoever declares `replaces` is authorized to modify the Schemas it names. On Kubernetes-compatible implementations this can be enforced at admission (see [Group and Relationship Authorization](#group-and-relationship-authorization)). Even then, `successor` remains the relationship Consumers follow.
+Implementations SHOULD also require that whoever declares `replaces` is authorized, by the owner of each Schema it names, to make that claim. On Kubernetes-compatible implementations this can be enforced at admission (see [Group and Relationship Authorization](#group-and-relationship-authorization)). Even then, `successor` remains the relationship Consumers follow.
 
 ### Deprecation
 
@@ -834,7 +834,7 @@ Unchecked, anyone who can create a Schema can join another team's lineage, publi
 Implementations SHOULD authorize these claims when an object is written:
 
 - publishing a Schema under a `shapeGroup`, or a Record or RecordSet under a `recordTypeGroup`, requires permission to publish under that group;
-- adding an entry to `replaces` requires permission to modify the Schema it names; and
+- adding an entry to `replaces` requires permission, granted by the named Schema's owner, to claim to replace it; and
 - permission to publish under the reserved `records.crossplane.io` group is held only by the implementation.
 
 On Kubernetes-compatible implementations, these checks SHOULD be ValidatingAdmissionPolicies that use the CEL `authorizer`, so that permission is ordinary RBAC:
@@ -849,7 +849,7 @@ On Kubernetes-compatible implementations, these checks SHOULD be ValidatingAdmis
       verbs: ["publish"]
   ```
 
-- Claiming to replace a Schema requires the verb `update` on that Schema. Entries already present in `replaces` are not re-checked, so an author can keep editing a Schema whose `replaces` someone else set.
+- Claiming to replace a Schema requires the verb `replace` on that Schema. Like `publish`, it is not a standard verb, and granting it does not allow modifying the Schema. Entries already present in `replaces` are not re-checked, so an author can keep editing a Schema whose `replaces` someone else set.
 
 Authorization happens where an object is written. It does not travel with an object copied to another cluster, where Consumers again have only claims. That is why Consumers discover successors through `successor`, which the predecessor's own Publisher sets, rather than through `replaces`.
 

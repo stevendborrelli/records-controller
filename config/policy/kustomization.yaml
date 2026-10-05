@@ -3,3 +3,5 @@ kind: Kustomization
 resources:
   - groups.yaml
   - replaces.yaml
+  # Alpha default. Remove this line to deploy with authorization locked down.
+  - permissive.yaml

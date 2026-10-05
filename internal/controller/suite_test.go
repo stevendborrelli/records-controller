@@ -78,7 +78,7 @@ func run(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "cannot create client: %v\n", err)
 		return 1
 	}
-	if err := installPolicies(filepath.Join("..", "..", "config", "policy")); err != nil {
+	if err := installPolicies(policyDir); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot install admission policies: %v\n", err)
 		return 1
 	}
@@ -107,42 +107,57 @@ func run(m *testing.M) int {
 	return m.Run()
 }
 
+// policyDir holds the admission policies and the alpha's permissive RBAC.
+var policyDir = filepath.Join("..", "..", "config", "policy")
+
+// permissiveFile grants everyone the permissions the policies check. Tests
+// run with authorization locked down, so it is installed only by the test
+// that exercises it.
+const permissiveFile = "permissive.yaml"
+
 // installPolicies creates the ValidatingAdmissionPolicies and bindings in
-// dir. They take effect shortly after creation, so tests that depend on them
-// poll.
+// dir, without the permissive RBAC. They take effect shortly after creation,
+// so tests that depend on them poll.
 func installPolicies(dir string) error {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
 		return err
 	}
 	for _, f := range files {
-		if filepath.Base(f) == "kustomization.yaml" {
+		if b := filepath.Base(f); b == "kustomization.yaml" || b == permissiveFile {
 			continue
 		}
-		r, err := os.Open(f)
-		if err != nil {
+		if _, err := createFromFile(f); err != nil {
 			return err
 		}
-		d := yaml.NewYAMLOrJSONDecoder(r, 4096)
-		for {
-			u := &unstructured.Unstructured{}
-			if err := d.Decode(u); errors.Is(err, io.EOF) {
-				break
-			} else if err != nil {
-				r.Close() //nolint:errcheck // Read-only.
-				return fmt.Errorf("cannot decode %s: %w", f, err)
-			}
-			if len(u.Object) == 0 {
-				continue
-			}
-			if err := k8s.Create(context.Background(), u); err != nil {
-				r.Close() //nolint:errcheck // Read-only.
-				return fmt.Errorf("cannot create %s %s: %w", u.GetKind(), u.GetName(), err)
-			}
-		}
-		r.Close() //nolint:errcheck // Read-only.
 	}
 	return nil
+}
+
+// createFromFile creates every object in a YAML file and returns them.
+func createFromFile(path string) ([]client.Object, error) {
+	r, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close() //nolint:errcheck // Read-only.
+	var created []client.Object
+	d := yaml.NewYAMLOrJSONDecoder(r, 4096)
+	for {
+		u := &unstructured.Unstructured{}
+		if err := d.Decode(u); errors.Is(err, io.EOF) {
+			return created, nil
+		} else if err != nil {
+			return created, fmt.Errorf("cannot decode %s: %w", path, err)
+		}
+		if len(u.Object) == 0 {
+			continue
+		}
+		if err := k8s.Create(context.Background(), u); err != nil {
+			return created, fmt.Errorf("cannot create %s %s: %w", u.GetKind(), u.GetName(), err)
+		}
+		created = append(created, u)
+	}
 }
 
 // binaryAssets returns the newest envtest binaries installed by setup-envtest.

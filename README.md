@@ -30,8 +30,8 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |
 | `replaces` stays in scope: a Schema replaces only Schemas in its namespace, a ClusterSchema only ClusterSchemas; a ClusterSchema's `successor` is a ClusterSchema | CRD CEL rules |
-| Publishing under a `shapeGroup` or `recordTypeGroup` requires the `publish` verb on `records.crossplane.io` `groups` with that name; only the controller may publish under `records.crossplane.io` | ValidatingAdmissionPolicy (`config/policy`) and RBAC |
-| Adding a `replaces` entry requires `update` on the Schema it names | ValidatingAdmissionPolicy (`config/policy`) and RBAC |
+| Publishing under a `shapeGroup` or `recordTypeGroup` requires the `publish` verb on `records.crossplane.io` `groups` with that name | ValidatingAdmissionPolicy and RBAC; open to everyone by default (see [Authorization](#authorization)) |
+| Adding a `replaces` entry requires the `replace` verb on the Schema it names | ValidatingAdmissionPolicy and RBAC; open to everyone by default (see [Authorization](#authorization)) |
 | Versions are unique and positive | CRD list-map keys and minimum |
 | `current` is published and not retracted; retracted versions are published | CRD CEL rules |
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |
@@ -48,6 +48,104 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 
 The contract digest covers `format` and `definition` only; the proposal does
 not yet define the digest inputs.
+
+## Authorization
+
+`shapeGroup`, `recordTypeGroup`, and `replaces` are claims about names and
+Schemas that may belong to someone else. `make deploy` installs three
+ValidatingAdmissionPolicies, in `config/policy`, that check each claim against
+RBAC when an object is created or changed:
+
+| Writing | Requires |
+| --- | --- |
+| a Schema or ClusterSchema with `shapeGroup: G` | verb `publish` on `groups` named `G` in `records.crossplane.io` |
+| a Record or RecordSet with `recordTypeGroup: G` | verb `publish` on `groups` named `G` in `records.crossplane.io` |
+| a new `replaces` entry naming Schema `S` | verb `replace` on `schemas` (or `clusterschemas`) named `S` |
+
+`groups` is not a served resource, and `publish` and `replace` are not standard
+verbs. RBAC rules name them anyway, as `certificates.k8s.io` does for
+`signers`. Granting `replace` on a Schema allows claiming to succeed it; it does
+not allow modifying it.
+
+### The alpha default is open
+
+For the alpha, `make deploy` also installs `config/policy/permissive.yaml`: a
+ClusterRole and ClusterRoleBinding named `records-permissive` that grant both
+verbs, on every group and Schema, to `system:authenticated`. The policies run,
+but block no one.
+
+The controller's own grant, `publish` on the reserved `records.crossplane.io`
+group, is separate and survives locking down.
+
+### Locking down
+
+1. Grant each team the groups it owns. For example, to let the network team's
+   service account publish under `network.example.org`:
+
+   ```yaml
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: ClusterRole
+   metadata:
+     name: records-publish-network-example-org
+   rules:
+     - apiGroups: ["records.crossplane.io"]
+       resources: ["groups"]
+       resourceNames: ["network.example.org"]
+       verbs: ["publish"]
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: ClusterRoleBinding
+   metadata:
+     name: records-publish-network-example-org
+   roleRef:
+     apiGroup: rbac.authorization.k8s.io
+     kind: ClusterRole
+     name: records-publish-network-example-org
+   subjects:
+     - kind: ServiceAccount
+       name: publisher
+       namespace: team-network
+   ```
+
+   Do not grant `publish` on `records.crossplane.io`; it is reserved for the
+   controller.
+
+2. Grant `replace` only where a Schema's owner agrees to be succeeded. A Role
+   in the owner's namespace covers its Schemas; a ClusterRole with
+   `resourceNames` covers particular ClusterSchemas. Most Schemas need no
+   `replace` grant at all: Consumers discover successors through `successor`,
+   which the predecessor's own Publisher sets.
+
+3. Remove the open grant, and stop redeploys from restoring it:
+
+   ```sh
+   kubectl delete clusterrolebinding records-permissive
+   kubectl delete clusterrole records-permissive
+   ```
+
+   Then remove `permissive.yaml` from `config/policy/kustomization.yaml`.
+
+4. Check a grant with a SubjectAccessReview. `kubectl auth can-i` cannot check
+   `groups`, because kubectl only resolves resources the API server serves.
+
+   ```sh
+   kubectl create -o jsonpath='{.status.allowed}' -f - <<EOF
+   apiVersion: authorization.k8s.io/v1
+   kind: SubjectAccessReview
+   spec:
+     user: system:serviceaccount:team-network:publisher
+     groups: ["system:serviceaccounts", "system:authenticated"]
+     resourceAttributes:
+       group: records.crossplane.io
+       resource: groups
+       name: network.example.org
+       verb: publish
+   EOF
+   ```
+
+Cluster administrators in `system:masters` pass every check, locked down or
+not. Authorization applies where an object is written: it does not travel
+with an object copied to another cluster.
 
 ## Installing and testing on kind
 

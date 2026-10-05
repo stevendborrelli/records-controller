@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,13 +36,13 @@ func publishRule(groups ...string) rbacv1.PolicyRule {
 	}
 }
 
-// updateSchemasRule grants update on the named Schemas in every namespace.
-func updateSchemasRule(names ...string) rbacv1.PolicyRule {
+// schemasRule grants verbs on the named Schemas in every namespace.
+func schemasRule(verb string, names ...string) rbacv1.PolicyRule {
 	return rbacv1.PolicyRule{
 		APIGroups:     []string{v1alpha1.GroupVersion.Group},
 		Resources:     []string{"schemas"},
 		ResourceNames: names,
-		Verbs:         []string{"update"},
+		Verbs:         []string{verb},
 	}
 }
 
@@ -135,11 +136,15 @@ func TestPublishingUnderAGroupRequiresAuthorization(t *testing.T) {
 	}
 }
 
+const replacesDenied = "replaces may name only Schemas on which the requester has the replace verb"
+
 func TestReplacesRequiresAuthorization(t *testing.T) {
 	ns := namespace(t)
 	newSchema(t, ns, "tenant-v1", subnetV1)
 	newSchema(t, ns, "platform-v1", subnetV1)
-	c := tenant(t, "successor-claimant", authorRule, publishRule("tenant.example.org"), updateSchemasRule("tenant-v1", "claims"))
+	// The tenant may claim to replace tenant-v1, and may edit claims.
+	c := tenant(t, "successor-claimant", authorRule, publishRule("tenant.example.org"),
+		schemasRule("replace", "tenant-v1"), schemasRule("update", "claims"))
 
 	claim := func(name string, replaces ...v1alpha1.SchemaReference) *v1alpha1.Schema {
 		s := &v1alpha1.Schema{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}, Spec: schemaSpec(subnetV1)}
@@ -151,7 +156,7 @@ func TestReplacesRequiresAuthorization(t *testing.T) {
 		return v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: name}
 	}
 
-	eventuallyRejected(t, "claiming to replace a Schema the tenant cannot update", "replaces may name only Schemas the requester is authorized to update",
+	eventuallyRejected(t, "claiming to replace a Schema without the replace verb", replacesDenied,
 		dryRunCreate(c, claim("tenant-v2", ref("platform-v1"))))
 	eventually(t, "claiming to replace the tenant's own Schema to be accepted",
 		dryRunCreate(c, claim("tenant-v2", ref("tenant-v1"))))
@@ -161,7 +166,7 @@ func TestReplacesRequiresAuthorization(t *testing.T) {
 	cs := &v1alpha1.ClusterSchema{ObjectMeta: metav1.ObjectMeta{Name: "tenant-networks-v1"}, Spec: schemaSpec(subnetV1)}
 	cs.Spec.ShapeGroup = "tenant.example.org"
 	cs.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindClusterSchema, Name: RawObjectName}}
-	eventuallyRejected(t, "claiming to replace rawobject-v1", "replaces may name only Schemas the requester is authorized to update",
+	eventuallyRejected(t, "claiming to replace rawobject-v1", replacesDenied,
 		dryRunCreate(c, cs))
 
 	// Entries already present are not re-checked: the tenant can edit a
@@ -180,7 +185,35 @@ func TestReplacesRequiresAuthorization(t *testing.T) {
 			s.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01"}
 		})
 	})
-	eventuallyRejected(t, "adding an unauthorized replaces entry", "replaces may name only Schemas the requester is authorized to update", func() error {
+	eventuallyRejected(t, "adding an unauthorized replaces entry", replacesDenied, func() error {
 		return edit(func(s *v1alpha1.Schema) { s.Spec.Replaces = append(s.Spec.Replaces, ref("platform-v2")) })
 	})
+}
+
+// The alpha installs permissive RBAC, so the policies block no one until it
+// is removed. Removing it is the documented way to lock authorization down.
+func TestPermissiveRBACIsTheAlphaDefault(t *testing.T) {
+	ns := namespace(t)
+	newSchema(t, ns, "platform-v1", subnetV1)
+	c := tenant(t, "alpha-user", authorRule) // No publish or replace grants of its own.
+
+	s := &v1alpha1.Schema{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "anything"}, Spec: schemaSpec(subnetV1)}
+	s.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindSchema, Name: "platform-v1"}}
+	// Both policies deny it; the API server reports whichever runs first.
+	eventuallyRejected(t, "publishing without grants while locked down", "ValidatingAdmissionPolicy",
+		dryRunCreate(c, s))
+
+	permissive, err := createFromFile(filepath.Join(policyDir, permissiveFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "publishing and claiming replaces under permissive RBAC to be accepted", dryRunCreate(c, s))
+
+	for _, o := range permissive {
+		if err := k8s.Delete(context.Background(), o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventuallyRejected(t, "publishing without grants after locking down", "ValidatingAdmissionPolicy",
+		dryRunCreate(c, s))
 }

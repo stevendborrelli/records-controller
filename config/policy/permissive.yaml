@@ -1,0 +1,28 @@
+# Alpha default: every authenticated user may publish under any group and
+# claim to replace any Schema, so the admission policies are installed but
+# block no one. Delete the ClusterRoleBinding to lock authorization down, then
+# grant publish and replace per team. See "Authorization" in the README.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: records-permissive
+rules:
+  - apiGroups: ["records.crossplane.io"]
+    resources: ["groups"]
+    verbs: ["publish"]
+  - apiGroups: ["records.crossplane.io"]
+    resources: ["schemas", "clusterschemas"]
+    verbs: ["replace"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: records-permissive
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: records-permissive
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated

@@ -1,7 +1,8 @@
-# replaces is a claim a Schema makes about other Schemas. Only someone allowed
-# to update a Schema may claim to replace it. Entries already present are not
-# re-checked, so a Publisher can keep editing a Schema whose replaces was set
-# by someone else.
+# replaces is a claim a Schema makes about other Schemas. Claiming to replace a
+# Schema requires the replace verb on it. replace is not a standard verb: RBAC
+# rules grant it like any other, and granting it gives no right to modify the
+# Schema. Entries already present are not re-checked, so a Publisher can keep
+# editing a Schema whose replaces was set by someone else.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -23,9 +24,9 @@ spec:
   validations:
     - expression: >-
         variables.added.all(r, r.kind == 'ClusterSchema'
-        ? authorizer.group('records.crossplane.io').resource('clusterschemas').name(r.name).check('update').allowed()
-        : authorizer.group('records.crossplane.io').resource('schemas').namespace(object.metadata.namespace).name(r.name).check('update').allowed())
-      message: replaces may name only Schemas the requester is authorized to update
+        ? authorizer.group('records.crossplane.io').resource('clusterschemas').name(r.name).check('replace').allowed()
+        : authorizer.group('records.crossplane.io').resource('schemas').namespace(object.metadata.namespace).name(r.name).check('replace').allowed())
+      message: replaces may name only Schemas on which the requester has the replace verb
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

@@ -32,11 +32,11 @@ share it.
   controller creates it at startup ([The Well-Known `rawObject`
   Contract](../records.md#the-well-known-rawobject-contract)), or you can install it manually.
 - Namespace `platform` exists.
-- Whoever applies the examples may publish under `platform.example.org`. `make
-  deploy` installs admission policies that require the `publish` verb on
-  `records.crossplane.io` `groups` named `platform.example.org` ([Group and
-  Relationship Authorization](../records.md#group-and-relationship-authorization)).
-  A cluster administrator has it already.
+- Whoever applies the examples may publish under `platform.example.org`.
+  `make deploy` installs admission policies that check this ([Group and
+  Relationship Authorization](../records.md#group-and-relationship-authorization)),
+  but in the alpha they are open to every authenticated user until locked
+  down (see Authorization in the [README](../README.md#authorization)).
 
 Let's confirm ClusterSchema `rawobject-v1` is installed and has a computed digest in `status.digest`:
 
@@ -203,7 +203,7 @@ Record is valid.
 
 ## Step 1: Define a Schema for the Network
 
-The team is now ready to describe what it publishes and creates a `network` shape, which is similar to a Kubernetes CRD. However, a shape is immutable and can have multiple incompatible and compatible versions coexisting at the same time.
+The team is now ready to describe what it publishes and creates a `network` shape, which is similar to a Kubernetes CRD. However, a shape is immutable and can have multiple versions coexisting at the same time.
 
 **Apply:**
 
@@ -243,11 +243,11 @@ successors through `successor` instead, which only the predecessor's
 Publisher sets, and treat `replaces` as informational
 ([`successor`](../records.md#successor), [`replaces`](../records.md#replaces)).
 
-The admission policies also stop the claim being made at all. Declaring
-`replaces` requires permission to update the Schema named. Here,
-`team-platform-ci` may create ClusterSchemas and publish under
-`platform.example.org`, but cannot update `rawobject-v1`. Adding this to
-`networks-v1` is denied:
+Once authorization is locked down, the admission policies also stop the
+claim being made at all. Declaring `replaces` requires the `replace` verb on
+the Schema named. Here, `team-platform-ci` may create ClusterSchemas and
+publish under `platform.example.org`, but has no `replace` grant on
+`rawobject-v1`. Adding this to `networks-v1` is denied:
 
 ```yaml
   replaces:
@@ -257,7 +257,7 @@ The admission policies also stop the claim being made at all. Declaring
 
 ```shell
 $ kubectl --as=team-platform-ci create -f networks-v1.yaml
-Error from server (Forbidden): error when creating "networks-v1.yaml": clusterschemas.records.crossplane.io "networks-v1" is forbidden: ValidatingAdmissionPolicy 'records-replaces' with binding 'records-replaces' denied request: replaces may name only Schemas the requester is authorized to update
+Error from server (Forbidden): error when creating "networks-v1.yaml": clusterschemas.records.crossplane.io "networks-v1" is forbidden: ValidatingAdmissionPolicy 'records-replaces' with binding 'records-replaces' denied request: replaces may name only Schemas on which the requester has the replace verb
 ```
 
 Nothing names a successor for `rawobject-v1` either: every free-form Record
@@ -428,14 +428,14 @@ Rejected by the API server:
 | A namespaced Schema declaring `replaces` of `networks-v1`, a ClusterSchema | `a Schema may only replace Schemas in its own namespace` ([`replaces`](../records.md#replaces)) |
 | A Schema with `format: Avro` | `Unsupported value: "Avro"`. `v1alpha1` permits only `StructuralSchema` ([`spec.format`](../records.md#specformat)) |
 
-Rejected by the admission policies, for a user without the matching permission:
+Rejected by the admission policies once authorization is locked down, for a user without the matching permission:
 
 | Attempt | Expect |
 |---|---|
 | A Schema with `shapeGroup: network.example.org`, by a user who may publish only under `platform.example.org` | `not authorized to publish under shapeGroup network.example.org` |
 | A Record or RecordSet with another team's `recordTypeGroup` | `not authorized to publish under recordTypeGroup …` |
 | Any Schema with `shapeGroup: records.crossplane.io` | `not authorized to publish under shapeGroup records.crossplane.io`. The group is reserved for the controller |
-| A Schema declaring `replaces` of a Schema the user cannot update | `replaces may name only Schemas the requester is authorized to update` |
+| A Schema declaring `replaces` of a Schema the user has no `replace` grant on | `replaces may name only Schemas on which the requester has the replace verb` |
 
 Reported by the controller, because they depend on other objects:
 
