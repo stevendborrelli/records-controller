@@ -31,6 +31,10 @@ spec:
       name: Digest
       priority: 1
       type: string
+    - jsonPath: .status.structuralDigest
+      name: Structural Digest
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

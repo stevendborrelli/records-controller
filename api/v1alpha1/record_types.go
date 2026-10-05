@@ -86,6 +86,8 @@ type RecordStatus struct {
 // +kubebuilder:selectablefield:JSONPath=`.spec.recordTypeGroup`
 // +kubebuilder:selectablefield:JSONPath=`.spec.recordType`
 // +kubebuilder:printcolumn:name="Valid",type=string,JSONPath=`.status.conditions[?(@.type=="Valid")].status`
+// +kubebuilder:printcolumn:name="Data Digest",type=string,JSONPath=`.status.dataDigest`,priority=1
+// +kubebuilder:printcolumn:name="Schema Digest",type=string,JSONPath=`.status.schema.digest`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Record struct {
 	metav1.TypeMeta   `json:",inline"`

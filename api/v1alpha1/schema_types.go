@@ -103,6 +103,7 @@ type SchemaStatus struct {
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.shapeVersion`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Digest",type=string,JSONPath=`.status.digest`,priority=1
+// +kubebuilder:printcolumn:name="Structural Digest",type=string,JSONPath=`.status.structuralDigest`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.shapeGroup`
 // +kubebuilder:selectablefield:JSONPath=`.spec.shape`
 // +kubebuilder:selectablefield:JSONPath=`.spec.shapeVersion`
@@ -133,6 +134,7 @@ type SchemaList struct {
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.shapeVersion`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Digest",type=string,JSONPath=`.status.digest`,priority=1
+// +kubebuilder:printcolumn:name="Structural Digest",type=string,JSONPath=`.status.structuralDigest`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.shapeGroup`
 // +kubebuilder:selectablefield:JSONPath=`.spec.shape`
 // +kubebuilder:selectablefield:JSONPath=`.spec.shapeVersion`

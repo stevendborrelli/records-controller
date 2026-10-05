@@ -27,6 +27,14 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Valid")].status
       name: Valid
       type: string
+    - jsonPath: .status.dataDigest
+      name: Data Digest
+      priority: 1
+      type: string
+    - jsonPath: .status.schema.digest
+      name: Schema Digest
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
