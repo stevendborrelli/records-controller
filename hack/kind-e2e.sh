@@ -83,6 +83,9 @@ metadata:
 spec:
   publisher:
     id: team-network
+  shapeGroup: network.example.org
+  shape: subnet
+  shapeVersion: v1
   format: StructuralSchema
   definition:
     type: object
@@ -181,6 +184,16 @@ expect_condition "Probe Schema is ready" "$NS" schema immutable-probe Ready True
 expect_rejected "Schema definition is immutable" "spec.definition is immutable" \
 	k -n "$NS" patch schema immutable-probe --type=merge -p '{"spec":{"definition":{"type":"object","properties":{"cidr":{"type":"integer"}}}}}' ||
 	expect_condition "Controller flags the changed contract" "$NS" schema immutable-probe Ready False/ContractChanged
+expect_rejected "Schema lineage is immutable" "spec.shapeGroup is immutable" \
+	k -n "$NS" patch schema immutable-probe --type=merge -p '{"spec":{"shapeGroup":"storage.example.org"}}'
+
+if k -n "$NS" get schemas --field-selector spec.shapeGroup=network.example.org,spec.shape=subnet,spec.shapeVersion=v1 -o name |
+	grep -qx schema.records.crossplane.io/subnet-v1 &&
+	[[ -z $(k -n "$NS" get schemas --field-selector spec.shapeGroup=storage.example.org -o name) ]]; then
+	pass "Field selectors list a Schema lineage"
+else
+	fail "Field selectors list a Schema lineage" "subnet-v1 not selected by its lineage, or another lineage matched"
+fi
 
 if k -n "$NS" patch schema subnet-v1 --type=merge -p '{"spec":{"deprecation":{"date":"2027-01-01","message":"superseded by subnet-v2"}}}' >/dev/null 2>&1; then
 	pass "Schema deprecation is mutable"

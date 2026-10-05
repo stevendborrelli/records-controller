@@ -13,6 +13,9 @@ metadata:
 spec:
   publisher:
     id: team-network
+  shapeGroup: network.example.org
+  shape: subnet
+  shapeVersion: v1
   format: StructuralSchema
   definition:
     type: object

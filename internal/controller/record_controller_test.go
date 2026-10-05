@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,9 +50,12 @@ func raw(s string) runtime.RawExtension { return runtime.RawExtension{Raw: []byt
 
 func schemaSpec(def string) v1alpha1.SchemaSpec {
 	return v1alpha1.SchemaSpec{
-		Publisher:  v1alpha1.Publisher{ID: "team-network"},
-		Format:     v1alpha1.FormatStructuralSchema,
-		Definition: raw(def),
+		Publisher:    v1alpha1.Publisher{ID: "team-network"},
+		ShapeGroup:   "network.example.org",
+		Shape:        "subnet",
+		ShapeVersion: "v1",
+		Format:       v1alpha1.FormatStructuralSchema,
+		Definition:   raw(def),
 	}
 }
 
@@ -269,6 +273,18 @@ func TestSchemaContractIsImmutable(t *testing.T) {
 		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.Publisher.ID = "someone-else" })
 		mustReject(t, err, "spec.publisher is immutable")
 	})
+	t.Run("ShapeGroup", func(t *testing.T) {
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.ShapeGroup = "storage.example.org" })
+		mustReject(t, err, "spec.shapeGroup is immutable")
+	})
+	t.Run("Shape", func(t *testing.T) {
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.Shape = "vpc" })
+		mustReject(t, err, "spec.shape is immutable")
+	})
+	t.Run("ShapeVersion", func(t *testing.T) {
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.ShapeVersion = "v2" })
+		mustReject(t, err, "spec.shapeVersion is immutable")
+	})
 	t.Run("DeprecationIsMutable", func(t *testing.T) {
 		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) {
 			u.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01", Message: "superseded by subnet-v2"}
@@ -287,6 +303,82 @@ func TestSchemaDeprecationDateFormat(t *testing.T) {
 	}
 	s.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01T00:00:00Z"}
 	mustReject(t, k8s.Create(context.Background(), s), "spec.deprecation.date")
+}
+
+func TestSchemaShapeGroupFormat(t *testing.T) {
+	ns := namespace(t)
+	for _, group := range []string{"", "Network.Example.org", "network_example.org", "-network.example.org"} {
+		s := &v1alpha1.Schema{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, GenerateName: "bad-group-"},
+			Spec:       schemaSpec(subnetV1),
+		}
+		s.Spec.ShapeGroup = group
+		mustReject(t, k8s.Create(context.Background(), s), "spec.shapeGroup")
+	}
+}
+
+// A lineage is a shapeGroup and shape, and a field selector can list it.
+func TestSchemaLineageSelectableFields(t *testing.T) {
+	ns := namespace(t)
+	for name, lineage := range map[string][3]string{
+		"network-subnet-v1": {"network.example.org", "subnet", "v1"},
+		"network-subnet-v2": {"network.example.org", "subnet", "v2"},
+		"network-vpc-v1":    {"network.example.org", "vpc", "v1"},
+		"storage-subnet-v1": {"storage.example.org", "subnet", "v1"},
+	} {
+		s := &v1alpha1.Schema{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+			Spec:       schemaSpec(subnetV1),
+		}
+		s.Spec.ShapeGroup, s.Spec.Shape, s.Spec.ShapeVersion = lineage[0], lineage[1], lineage[2]
+		create(t, s)
+	}
+
+	names := func(fields client.MatchingFields) []string {
+		t.Helper()
+		l := &v1alpha1.SchemaList{}
+		if err := k8s.List(context.Background(), l, client.InNamespace(ns), fields); err != nil {
+			t.Fatalf("cannot list Schemas by %v: %v", fields, err)
+		}
+		var got []string
+		for _, s := range l.Items {
+			got = append(got, s.Name)
+		}
+		slices.Sort(got)
+		return got
+	}
+	for _, tc := range []struct {
+		fields client.MatchingFields
+		want   []string
+	}{
+		{client.MatchingFields{"spec.shapeGroup": "network.example.org", "spec.shape": "subnet"}, []string{"network-subnet-v1", "network-subnet-v2"}},
+		{client.MatchingFields{"spec.shapeGroup": "network.example.org", "spec.shape": "subnet", "spec.shapeVersion": "v1"}, []string{"network-subnet-v1"}},
+		{client.MatchingFields{"spec.shape": "subnet"}, []string{"network-subnet-v1", "network-subnet-v2", "storage-subnet-v1"}},
+	} {
+		if got := names(tc.fields); !slices.Equal(got, tc.want) {
+			t.Errorf("Schemas matching %v: got %v, want %v", tc.fields, got, tc.want)
+		}
+	}
+}
+
+// The lineage is Publisher metadata, not contract: identical definitions in
+// different lineages have the same digest.
+func TestContractDigestIgnoresLineage(t *testing.T) {
+	network := schemaSpec(subnetV1)
+	storage := schemaSpec(subnetV1)
+	storage.ShapeGroup, storage.ShapeVersion = "storage.example.org", "v3"
+
+	a, err := ContractDigest(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ContractDigest(storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Errorf("digests differ across lineages: %s and %s", a, b)
+	}
 }
 
 func TestClusterSchemaCannotReplaceNamespacedSchema(t *testing.T) {

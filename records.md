@@ -35,7 +35,7 @@ A `Record` contains immutable facts:
 
 A `Schema` contains an immutable contract plus mutable Publisher metadata describing that contract:
 
-- its compatibility group;
+- the lineage and compatibility group it belongs to;
 - the contracts it replaces; and
 - its deprecation state.
 
@@ -301,6 +301,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  shapeGroup: network.example.org
   shape: subnet
   shapeVersion: v1
   format: StructuralSchema
@@ -335,6 +336,7 @@ spec:
 The following properties of a Schema are immutable:
 
 - `spec.publisher`;
+- `spec.shapeGroup`;
 - `spec.shape`;
 - `spec.shapeVersion`;
 - `spec.format`; and
@@ -347,24 +349,39 @@ The following properties are mutable Publisher assertions:
 
 Changing an immutable contract requires creating a new Schema.
 
-### `shape` and `shapeVersion`
+### `shapeGroup`, `shape`, and `shapeVersion`
 
-A Schema carries a name for the contract lineage to which it belongs.
+A Schema names the contract lineage it belongs to using three fields, modeled on a Kubernetes API's group, kind, and version:
 
-- **`shape`** describes the form of data, such as `subnet`, `rawObject`, or `keyValue`.
-- **`shapeVersion`** identifies a Publisher-defined compatibility group within that lineage.
+| Field | Identifies | Kubernetes analogue |
+| --- | --- | --- |
+| `shapeGroup` | The owner of the lineage, such as `network.example.org` | API group |
+| `shape` | The form of data within that group, such as `subnet`, `rawObject`, or `keyValue` | Kind |
+| `shapeVersion` | A Publisher-defined compatibility group within the lineage | API version |
 
-Schemas sharing the same `shape` and `shapeVersion` are asserted by the Publisher to satisfy the same compatibility contract.
+A lineage is identified by `shapeGroup` and `shape` together. Two Publishers may each define a `subnet` shape: `network.example.org/subnet` and `storage.example.org/subnet` are different lineages.
+
+`shapeGroup` is required and MUST be a lowercase RFC 1123 DNS subdomain. The `records.crossplane.io` group is reserved for contracts defined by this specification. As with `publisher.id`, a `shapeGroup` is a claim, not proof that the Publisher controls that domain.
+
+Unlike a Kubernetes API version, which has exactly one schema, a `shapeVersion` may contain several Schemas. Each is an immutable revision identified by its digest, such as a revision that adds an optional field.
+
+Schemas sharing the same `shapeGroup`, `shape`, and `shapeVersion` are asserted by the Publisher to satisfy the same compatibility contract.
 
 This assertion is not mechanically verified by the Records model.
 
-`shape` and `shapeVersion` are therefore metadata about the Publisher's compatibility model. They do not establish structural equivalence.
+The lineage fields are therefore metadata about the Publisher's compatibility model. They do not establish structural equivalence, and they are not inputs to a Schema's digests: two Schemas with identical definitions in different lineages have the same `digest`.
 
 A `shapeVersion` MUST NOT be interpreted as proof that two Schemas have identical definitions.
 
+On Kubernetes-compatible implementations, `shapeGroup`, `shape`, and `shapeVersion` SHOULD be declared as selectable fields, so that a lineage can be listed with a field selector:
+
+```sh
+kubectl get schemas --field-selector spec.shapeGroup=network.example.org,spec.shape=subnet
+```
+
 `recordType` remains separate from `shape`.
 
-A single `rawObject/v1` Schema, for example, may serve Records with `recordType` values such as `subnet`, `region`, and `policy`.
+A single `records.crossplane.io/rawObject/v1` Schema, for example, may serve Records with `recordType` values such as `subnet`, `region`, and `policy`.
 
 ### `spec.format`
 
@@ -388,7 +405,7 @@ Schema relationships have different strengths.
 | --- | --- | --- |
 | `digest` | Same canonical contract | Computation |
 | `structuralDigest` | Same validation structure, differing only in documentation | Computation |
-| `shape` + `shapeVersion` | Publisher asserts membership in the same compatibility group | Publisher |
+| `shapeGroup` + `shape` + `shapeVersion` | Publisher asserts membership in the same compatibility group | Publisher |
 | `replaces` | Publisher identifies another Schema as a predecessor | Publisher |
 
 The first two relationships are mechanically verifiable.
@@ -488,6 +505,7 @@ metadata:
 spec:
   publisher:
     id: system
+  shapeGroup: records.crossplane.io
   shape: rawObject
   shapeVersion: v1
   format: StructuralSchema

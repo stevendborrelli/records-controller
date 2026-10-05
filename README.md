@@ -5,7 +5,8 @@ implements a deliberately trimmed `v1alpha1` to test whether the core model
 holds up:
 
 - `Schema` and `ClusterSchema`: an immutable contract (`format` and
-  `definition`) plus mutable `replaces` and `deprecation`, with one digest.
+  `definition`) in a named lineage (`shapeGroup`, `shape`, `shapeVersion`),
+  plus mutable `replaces` and `deprecation`, with one digest.
 - `Record`: an immutable, schema-bound snapshot with optional
   Publisher-asserted digests.
 - `RecordSet`: a mutable index with `current`, retraction, and per-version
@@ -13,15 +14,17 @@ holds up:
 
 API group: `records.crossplane.io/v1alpha1`.
 
-Not implemented: inline schemas, `shape`/`shapeVersion`, `structuralDigest`,
-retention, `expiresAt`, and `phase`.
+Not implemented: inline schemas, `structuralDigest`, retention, `expiresAt`,
+`phase`, and the well-known `rawobject-v1` ClusterSchema.
 
 ## What enforces what
 
 | Rule | Enforced by |
 | --- | --- |
 | Record `spec` is immutable | CRD CEL rule (`self == oldSelf`) |
-| Schema `publisher`, `format`, `definition` are immutable | CRD CEL rules |
+| Schema `publisher`, lineage, `format`, `definition` are immutable | CRD CEL rules |
+| `shapeGroup` is a lowercase DNS subdomain | CRD pattern |
+| Schemas can be listed by lineage (`kubectl get schemas --field-selector spec.shapeGroup=…,spec.shape=…`) | CRD `selectableFields` |
 | `status` digests are write-once | CRD CEL transition rules |
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |

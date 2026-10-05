@@ -15,11 +15,21 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.shapeGroup
+      name: Group
+      type: string
+    - jsonPath: .spec.shape
+      name: Shape
+      type: string
+    - jsonPath: .spec.shapeVersion
+      name: Version
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
     - jsonPath: .status.digest
       name: Digest
+      priority: 1
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -49,8 +59,10 @@ spec:
           spec:
             description: |-
               SchemaSpec is the contract and Publisher metadata shared by Schema and
-              ClusterSchema. Publisher, format, and definition form the immutable
-              contract; replaces and deprecation are mutable Publisher assertions.
+              ClusterSchema. Publisher, the lineage (shapeGroup, shape, and
+              shapeVersion), format, and definition are immutable; replaces and
+              deprecation are mutable Publisher assertions. Only format and definition
+              are inputs to the contract digest.
             properties:
               definition:
                 description: |-
@@ -112,14 +124,46 @@ spec:
                   type: object
                 maxItems: 32
                 type: array
+              shape:
+                description: |-
+                  Shape is the form of data within the shapeGroup, like a Kubernetes
+                  kind.
+                maxLength: 63
+                minLength: 1
+                type: string
+              shapeGroup:
+                description: |-
+                  ShapeGroup owns the contract lineage, like a Kubernetes API group.
+                  Together with shape it identifies the lineage. It is a claim, not
+                  proof that the Publisher controls the domain.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+              shapeVersion:
+                description: |-
+                  ShapeVersion is a Publisher-asserted compatibility group within the
+                  lineage, like a Kubernetes API version. Several Schemas may share a
+                  shapeVersion; each is an immutable revision.
+                maxLength: 63
+                minLength: 1
+                type: string
             required:
             - definition
             - format
             - publisher
+            - shape
+            - shapeGroup
+            - shapeVersion
             type: object
             x-kubernetes-validations:
             - message: spec.publisher is immutable
               rule: self.publisher == oldSelf.publisher
+            - message: spec.shapeGroup is immutable
+              rule: self.shapeGroup == oldSelf.shapeGroup
+            - message: spec.shape is immutable
+              rule: self.shape == oldSelf.shape
+            - message: spec.shapeVersion is immutable
+              rule: self.shapeVersion == oldSelf.shapeVersion
             - message: spec.format is immutable
               rule: self.format == oldSelf.format
             - message: spec.definition is immutable
@@ -202,6 +246,10 @@ spec:
         required:
         - spec
         type: object
+    selectableFields:
+    - jsonPath: .spec.shapeGroup
+    - jsonPath: .spec.shape
+    - jsonPath: .spec.shapeVersion
     served: true
     storage: true
     subresources:
