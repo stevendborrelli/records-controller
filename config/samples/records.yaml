@@ -84,3 +84,20 @@ spec:
       schemaRef:
         kind: Schema
         name: subnet-v1
+---
+# A Consumer that reads the v1 subnet contract follows the Publisher's
+# current version, and holds its last v1 version if current moves on.
+apiVersion: records.crossplane.io/v1alpha1
+kind: Subscription
+metadata:
+  name: prod-west-subnet
+  namespace: platform
+spec:
+  recordSet:
+    name: prod-west
+  follow: Current
+  compatibleWith:
+    shapeGroup: network.example.org
+    shape: subnet
+    shapeVersion: v1
+  onIncompatible: Hold

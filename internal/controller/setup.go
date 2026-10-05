@@ -7,8 +7,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-// +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas;clusterschemas;records;recordsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas/status;clusterschemas/status;records/status;recordsets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas;clusterschemas;records;recordsets;subscriptions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas/status;clusterschemas/status;records/status;recordsets/status;subscriptions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=records.crossplane.io,resources=clusterschemas,verbs=create
 // +kubebuilder:rbac:groups=records.crossplane.io,resources=groups,resourceNames=records.crossplane.io,verbs=publish
 
@@ -28,5 +28,9 @@ func Setup(ctx context.Context, mgr ctrl.Manager) error {
 	if err := (&RecordReconciler{Client: c}).SetupWithManager(ctx, mgr); err != nil {
 		return err
 	}
-	return (&RecordSetReconciler{Client: c}).SetupWithManager(ctx, mgr)
+	if err := (&RecordSetReconciler{Client: c}).SetupWithManager(ctx, mgr); err != nil {
+		return err
+	}
+	// After the RecordSet controller, whose Record index it uses.
+	return (&SubscriptionReconciler{Client: c}).SetupWithManager(ctx, mgr)
 }

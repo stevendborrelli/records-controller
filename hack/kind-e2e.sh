@@ -429,6 +429,54 @@ recordset bad-structural 4 "    - version: 4
 expect_condition "Structural digest mismatch is detected" "$NS" recordset bad-structural Ready False/InvalidVersions
 
 # ---------------------------------------------------------------------------
+step "Subscription"
+subscription() { # name [extra-spec-yaml]
+	cat <<EOF
+apiVersion: records.crossplane.io/v1alpha1
+kind: Subscription
+metadata:
+  name: $1
+  namespace: $NS
+spec:
+  recordSet:
+    name: follow-me
+${2:-}
+EOF
+}
+selected() { k -n "$NS" get subscription "$1" -o jsonpath='{.status.selected.version}'; }
+expect_selected() { # description subscription version
+	local got=""
+	for _ in $(seq 1 60); do
+		got=$(selected "$2")
+		[[ $got == "$3" ]] && { pass "$1"; return; }
+		sleep 1
+	done
+	fail "$1" "selected version is \"$got\", want $3"
+}
+
+recordset follow-me 2 "$(version_entry 2 prod-west-2)" | k apply -f - >/dev/null
+subscription follows-current | k apply -f - >/dev/null
+subscription reads-v1 "  compatibleWith:
+    shapeGroup: network.example.org
+    shape: subnet
+    shapeVersion: v1" | k apply -f - >/dev/null
+expect_selected "A Subscription follows current" follows-current 2
+expect_selected "A v1 Subscription selects a v1 version" reads-v1 2
+data_cidr=$(k -n "$NS" get subscription follows-current -o jsonpath='{.status.data.cidr}')
+[[ $data_cidr == 10.21.0.0/16 ]] && pass "A Subscription serves the Record's data" ||
+	fail "A Subscription serves the Record's data" "status.data.cidr is \"$data_cidr\""
+
+# The Publisher moves current to a version under subnet-v2.
+k -n "$NS" patch recordset follow-me --type=merge -p "{\"spec\":{\"current\":4,\"highestVersion\":4,\"versions\":[
+	{\"version\":4,\"recordRef\":{\"name\":\"prod-west-4\"},\"schemaRef\":{\"kind\":\"Schema\",\"name\":\"subnet-v2\"}},
+	{\"version\":2,\"recordRef\":{\"name\":\"prod-west-2\"},\"schemaRef\":{\"kind\":\"Schema\",\"name\":\"subnet-v1\",\"structuralDigest\":\"$(status_of subnet-v1 structuralDigest)\"}}]}}" >/dev/null
+expect_selected "A Subscription follows current to a new contract" follows-current 4
+expect_condition "A v1 Subscription reports the incompatible current" "$NS" subscription reads-v1 UpToDate False/Incompatible
+expect_condition "A v1 Subscription stays Ready while holding" "$NS" subscription reads-v1 Ready True/Selected
+expect_selected "A v1 Subscription holds its v1 version" reads-v1 2
+info "$(k -n "$NS" get subscription reads-v1 -o jsonpath='{.status.conditions[?(@.type=="UpToDate")].message}')"
+
+# ---------------------------------------------------------------------------
 step "Authorization"
 # e2e-tenant may author Records kinds and publish under tenant.example.org
 # only. Requests impersonate it, and use server-side dry run.

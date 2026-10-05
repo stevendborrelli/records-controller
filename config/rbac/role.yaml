@@ -20,6 +20,7 @@ rules:
   - records/status
   - recordsets/status
   - schemas/status
+  - subscriptions/status
   verbs:
   - get
   - patch
@@ -38,6 +39,7 @@ rules:
   - records
   - recordsets
   - schemas
+  - subscriptions
   verbs:
   - get
   - list

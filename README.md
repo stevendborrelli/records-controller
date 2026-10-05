@@ -12,6 +12,10 @@ holds up:
   Publisher-asserted digests.
 - `RecordSet`: a mutable index with `current`, retraction, and per-version
   data, contract, and structural digests.
+- `Subscription`: a Consumer's choice of version from a RecordSet in its own
+  namespace (`Current`, `LatestCompatible`, or `Pinned`, optionally limited to
+  a contract it can read), with the selected version's verified data in its
+  status. See [docs/subscriptions.md](docs/subscriptions.md).
 
 API group: `records.crossplane.io/v1alpha1`.
 
@@ -44,6 +48,9 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | A Schema name reused for a different contract invalidates bound Records | Record controller |
 | The well-known `rawobject-v1` ClusterSchema exists, and is recreated if deleted; a conflicting one is reported, not replaced | Controller at startup, and the ClusterSchema controller |
 | Versions ordered high to low; Records exist, match publisher, `recordTypeGroup`, `recordType`, schema, and digests, including structural digests | RecordSet controller |
+| A Subscription serves only a verified version, and keeps its last one when the followed version is incompatible or unavailable | Subscription controller |
+| A Subscription follows only a RecordSet in its own namespace | API shape (no `namespace` field) |
+| `version` only with `Pinned`; `compatibleWith` required for `LatestCompatible` | CRD CEL rules |
 
 The contract digest covers `format` and `definition` only; the proposal does
 not yet define the digest inputs.
@@ -146,6 +153,9 @@ make kind-e2e
 
 which creates a kind cluster, deploys the controller, and runs the end-to-end
 checks in `hack/kind-e2e.sh`.
+
+[docs/subscriptions.md](docs/subscriptions.md) explains how Consumers follow
+a RecordSet.
 
 [docs/environmentconfig-migration.md](docs/environmentconfig-migration.md)
 walks through migrating a Crossplane EnvironmentConfig to Records, step by

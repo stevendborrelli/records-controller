@@ -48,11 +48,18 @@ func tenant(t *testing.T, name string, rules ...rbacv1.PolicyRule) client.Client
 	if err != nil {
 		t.Fatalf("cannot create client for %s: %v", name, err)
 	}
-	create(t, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}, Rules: rules})
-	create(t, &rbacv1.ClusterRoleBinding{
+	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}, Rules: rules}
+	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: name},
 		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: rbacv1.UserKind, Name: name}},
+	}
+	create(t, role)
+	create(t, binding)
+	// They are cluster-scoped, so remove them for the next run.
+	t.Cleanup(func() {
+		_ = k8s.Delete(context.Background(), binding)
+		_ = k8s.Delete(context.Background(), role)
 	})
 	return c
 }

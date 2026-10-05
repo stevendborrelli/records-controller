@@ -1,0 +1,289 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: subscriptions.records.crossplane.io
+spec:
+  group: records.crossplane.io
+  names:
+    kind: Subscription
+    listKind: SubscriptionList
+    plural: subscriptions
+    singular: subscription
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.recordSet.name
+      name: RecordSet
+      type: string
+    - jsonPath: .spec.follow
+      name: Follow
+      type: string
+    - jsonPath: .status.selected.version
+      name: Selected
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="UpToDate")].status
+      name: UpToDate
+      type: string
+    - jsonPath: .status.selected.record
+      name: Record
+      priority: 1
+      type: string
+    - jsonPath: .status.selected.dataDigest
+      name: Data Digest
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          A Subscription follows a RecordSet on behalf of a Consumer. It selects a
+          version according to its follow policy, verifies it, and serves the
+          selected Record's data in its status.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SubscriptionSpec is what a Consumer wants from a RecordSet.
+            properties:
+              compatibleWith:
+                description: |-
+                  CompatibleWith is the contract lineage the Consumer can read. A version
+                  whose Schema is in another lineage or shapeVersion is incompatible.
+                properties:
+                  shape:
+                    description: Shape within the shapeGroup.
+                    minLength: 1
+                    type: string
+                  shapeGroup:
+                    description: ShapeGroup of the lineage.
+                    maxLength: 253
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  shapeVersion:
+                    description: ShapeVersion is the compatibility group within the
+                      lineage.
+                    minLength: 1
+                    type: string
+                required:
+                - shape
+                - shapeGroup
+                - shapeVersion
+                type: object
+              follow:
+                default: Current
+                description: |-
+                  Follow selects which version to follow: Current, the version the
+                  Publisher recommends; LatestCompatible, the newest version that is not
+                  retracted and matches compatibleWith; or Pinned, exactly version.
+                enum:
+                - Current
+                - LatestCompatible
+                - Pinned
+                type: string
+              onIncompatible:
+                default: Hold
+                description: |-
+                  OnIncompatible is what to do when the version to follow is
+                  incompatible: Hold keeps the last selected version and stays Ready;
+                  Fail keeps it but reports Ready=False.
+                enum:
+                - Hold
+                - Fail
+                type: string
+              recordSet:
+                description: RecordSet to follow, in the Subscription's namespace.
+                properties:
+                  name:
+                    description: Name of the RecordSet.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              version:
+                description: Version to follow when follow is Pinned.
+                format: int64
+                minimum: 1
+                type: integer
+            required:
+            - recordSet
+            type: object
+            x-kubernetes-validations:
+            - message: version is required when follow is Pinned
+              rule: self.follow != 'Pinned' || has(self.version)
+            - message: version may be set only when follow is Pinned
+              rule: self.follow == 'Pinned' || !has(self.version)
+            - message: compatibleWith is required when follow is LatestCompatible
+              rule: self.follow != 'LatestCompatible' || has(self.compatibleWith)
+          status:
+            description: SubscriptionStatus is the observed state of a Subscription.
+            properties:
+              conditions:
+                description: Conditions of the Subscription.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              data:
+                description: Data is the selected Record's verified data.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              observedGeneration:
+                description: ObservedGeneration is the generation last reconciled.
+                format: int64
+                type: integer
+              selected:
+                description: |-
+                  Selected is the version currently served. It changes only when a new
+                  version is selected and verified, so it survives the RecordSet
+                  becoming unavailable or the followed version becoming incompatible.
+                properties:
+                  dataDigest:
+                    description: DataDigest of the Record's data.
+                    pattern: ^sha256:[0-9a-f]{64}$
+                    type: string
+                  lineage:
+                    description: Lineage of the Schema the Record is bound to.
+                    properties:
+                      shape:
+                        description: Shape within the shapeGroup.
+                        minLength: 1
+                        type: string
+                      shapeGroup:
+                        description: ShapeGroup of the lineage.
+                        maxLength: 253
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      shapeVersion:
+                        description: ShapeVersion is the compatibility group within
+                          the lineage.
+                        minLength: 1
+                        type: string
+                    required:
+                    - shape
+                    - shapeGroup
+                    - shapeVersion
+                    type: object
+                  record:
+                    description: Record that holds the version's data.
+                    type: string
+                  schema:
+                    description: Schema the Record is bound to.
+                    properties:
+                      kind:
+                        description: Kind of the referenced Schema.
+                        enum:
+                        - Schema
+                        - ClusterSchema
+                        type: string
+                      name:
+                        description: Name of the referenced Schema.
+                        minLength: 1
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    type: object
+                  schemaDigest:
+                    description: SchemaDigest of the contract the Record is bound
+                      to.
+                    pattern: ^sha256:[0-9a-f]{64}$
+                    type: string
+                  version:
+                    description: Version number in the RecordSet.
+                    format: int64
+                    type: integer
+                required:
+                - dataDigest
+                - lineage
+                - record
+                - schema
+                - schemaDigest
+                - version
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
