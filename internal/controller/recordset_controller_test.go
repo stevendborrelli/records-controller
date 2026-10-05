@@ -130,26 +130,30 @@ func TestRecordSetAdmission(t *testing.T) {
 	create(t, rs)
 
 	t.Run("NewVersionsMustBeHigher", func(t *testing.T) {
-		u := rs.DeepCopy()
-		u.Spec.Versions = append(u.Spec.Versions, version(t, 1, "prod-west-1", "subnet-v1", subnetV1))
-		mustReject(t, k8s.Update(context.Background(), u), "new versions must be greater than every existing version")
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions = append(u.Spec.Versions, version(t, 1, "prod-west-1", "subnet-v1", subnetV1))
+		})
+		mustReject(t, err, "new versions must be greater than every existing version")
 	})
 	t.Run("PublishedEntriesAreImmutable", func(t *testing.T) {
-		u := rs.DeepCopy()
-		u.Spec.Versions[1].RecordRef.Name = "prod-west-5"
-		mustReject(t, k8s.Update(context.Background(), u), "published version entries are immutable")
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions[1].RecordRef.Name = "prod-west-5"
+		})
+		mustReject(t, err, "published version entries are immutable")
 	})
 	t.Run("PublisherIsImmutable", func(t *testing.T) {
-		u := rs.DeepCopy()
-		u.Spec.Publisher.ID = "someone-else"
-		mustReject(t, k8s.Update(context.Background(), u), "spec.publisher is immutable")
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Publisher.ID = "someone-else"
+		})
+		mustReject(t, err, "spec.publisher is immutable")
 	})
 	t.Run("PublishNewVersionAndRetract", func(t *testing.T) {
-		u := rs.DeepCopy()
-		u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, u.Spec.Versions...)
-		u.Spec.Retracted = append(u.Spec.Retracted, v1alpha1.Retraction{Version: 5})
-		u.Spec.Current = ptr.To[int64](6)
-		if err := k8s.Update(context.Background(), u); err != nil {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, u.Spec.Versions...)
+			u.Spec.Retracted = append(u.Spec.Retracted, v1alpha1.Retraction{Version: 5})
+			u.Spec.Current = ptr.To[int64](6)
+		})
+		if err != nil {
 			t.Fatalf("publishing a new version and retracting an old one should be allowed: %v", err)
 		}
 	})
@@ -163,25 +167,32 @@ func TestRecordSetVersionReuseAfterRemoval(t *testing.T) {
 	create(t, rs)
 
 	// Retention removes versions 2 and 3.
-	u := rs.DeepCopy()
-	u.Spec.Retracted = nil
-	u.Spec.Versions = u.Spec.Versions[:2]
-	if err := k8s.Update(context.Background(), u); err != nil {
+	err := update(rs, func(u *v1alpha1.RecordSet) {
+		u.Spec.Retracted = nil
+		u.Spec.Versions = u.Spec.Versions[:2]
+	})
+	if err != nil {
 		t.Fatalf("removing old versions should be allowed: %v", err)
 	}
 
 	// Reusing version 3 for different content is rejected only because it
 	// is lower than the remaining versions.
-	u.Spec.Versions = append(u.Spec.Versions, version(t, 3, "something-else", "subnet-v1", subnetV1))
-	mustReject(t, k8s.Update(context.Background(), u), "new versions must be greater than every existing version")
+	err = update(rs, func(u *v1alpha1.RecordSet) {
+		u.Spec.Versions = append(u.Spec.Versions, version(t, 3, "something-else", "subnet-v1", subnetV1))
+	})
+	mustReject(t, err, "new versions must be greater than every existing version")
 
 	// If every version is removed, the old numbers can be reused.
-	u.Spec.Versions, u.Spec.Current = nil, nil
-	if err := k8s.Update(context.Background(), u); err != nil {
+	err = update(rs, func(u *v1alpha1.RecordSet) {
+		u.Spec.Versions, u.Spec.Current = nil, nil
+	})
+	if err != nil {
 		t.Fatalf("removing every version should be allowed: %v", err)
 	}
-	u.Spec.Versions = []v1alpha1.RecordSetVersion{version(t, 4, "something-else", "subnet-v1", subnetV1)}
-	if err := k8s.Update(context.Background(), u); err != nil {
+	err = update(rs, func(u *v1alpha1.RecordSet) {
+		u.Spec.Versions = []v1alpha1.RecordSetVersion{version(t, 4, "something-else", "subnet-v1", subnetV1)}
+	})
+	if err != nil {
 		t.Fatalf("unexpected rejection: %v", err)
 	}
 	t.Log("KNOWN GAP: version 4 was reused for different content after every version was removed")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"slices"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -150,6 +152,33 @@ func recordConds(r *v1alpha1.Record) []metav1.Condition         { return r.Statu
 func schemaConds(s *v1alpha1.Schema) []metav1.Condition         { return s.Status.Conditions }
 func setConds(s *v1alpha1.RecordSet) []metav1.Condition         { return s.Status.Conditions }
 func clusterConds(s *v1alpha1.ClusterSchema) []metav1.Condition { return s.Status.Conditions }
+
+// update re-reads obj, applies mutate, and updates it, retrying on conflict.
+// The controllers write status concurrently, and the API server checks
+// resourceVersion before admission validation, so updating a stale copy fails
+// with a conflict instead of the validation error under test.
+func update[T client.Object](obj T, mutate func(T)) error {
+	return retryOnConflict(obj, mutate, func(ctx context.Context) error { return k8s.Update(ctx, obj) })
+}
+
+// updateStatus is update for the status subresource.
+func updateStatus[T client.Object](obj T, mutate func(T)) error {
+	return retryOnConflict(obj, mutate, func(ctx context.Context) error { return k8s.Status().Update(ctx, obj) })
+}
+
+func retryOnConflict[T client.Object](obj T, mutate func(T), write func(context.Context) error) error {
+	key := client.ObjectKeyFromObject(obj)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Decoding into a populated struct keeps fields the response omits,
+		// so start from zero to get exactly what the API server stores.
+		reflect.ValueOf(obj).Elem().SetZero()
+		if err := k8s.Get(context.Background(), key, obj); err != nil {
+			return err
+		}
+		mutate(obj)
+		return write(context.Background())
+	})
+}
 
 // mustReject asserts that an API call was rejected with a message containing
 // want.

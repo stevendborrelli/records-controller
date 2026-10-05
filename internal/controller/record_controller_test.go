@@ -230,14 +230,12 @@ func TestRecordSpecIsImmutable(t *testing.T) {
 	r = waitForCondition(t, r, recordConds, v1alpha1.ConditionValid, metav1.ConditionTrue, ReasonVerified)
 
 	t.Run("RecordType", func(t *testing.T) {
-		u := r.DeepCopy()
-		u.Spec.RecordType = "region"
-		mustReject(t, k8s.Update(context.Background(), u), "spec is immutable")
+		err := update(r.DeepCopy(), func(u *v1alpha1.Record) { u.Spec.RecordType = "region" })
+		mustReject(t, err, "spec is immutable")
 	})
 	t.Run("Data", func(t *testing.T) {
-		u := r.DeepCopy()
-		u.Spec.Data = raw(`{"cidr":"10.99.0.0/16"}`)
-		mustReject(t, k8s.Update(context.Background(), u), "spec is immutable")
+		err := update(r.DeepCopy(), func(u *v1alpha1.Record) { u.Spec.Data = raw(`{"cidr":"10.99.0.0/16"}`) })
+		mustReject(t, err, "spec is immutable")
 	})
 }
 
@@ -249,14 +247,12 @@ func TestRecordStatusDigestsAreWriteOnce(t *testing.T) {
 	r = waitForCondition(t, r, recordConds, v1alpha1.ConditionValid, metav1.ConditionTrue, ReasonVerified)
 
 	t.Run("DataDigest", func(t *testing.T) {
-		u := r.DeepCopy()
-		u.Status.DataDigest = bogusDigest
-		mustReject(t, k8s.Status().Update(context.Background(), u), "status.dataDigest is write-once")
+		err := updateStatus(r.DeepCopy(), func(u *v1alpha1.Record) { u.Status.DataDigest = bogusDigest })
+		mustReject(t, err, "status.dataDigest is write-once")
 	})
 	t.Run("SchemaDigest", func(t *testing.T) {
-		u := r.DeepCopy()
-		u.Status.Schema = nil
-		mustReject(t, k8s.Status().Update(context.Background(), u), "status.schema.digest is write-once")
+		err := updateStatus(r.DeepCopy(), func(u *v1alpha1.Record) { u.Status.Schema = nil })
+		mustReject(t, err, "status.schema.digest is write-once")
 	})
 }
 
@@ -266,19 +262,18 @@ func TestSchemaContractIsImmutable(t *testing.T) {
 	s = waitForCondition(t, s, schemaConds, v1alpha1.ConditionReady, metav1.ConditionTrue, ReasonVerified)
 
 	t.Run("Definition", func(t *testing.T) {
-		u := s.DeepCopy()
-		u.Spec.Definition = raw(subnetV2)
-		mustReject(t, k8s.Update(context.Background(), u), "spec.definition is immutable")
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.Definition = raw(subnetV2) })
+		mustReject(t, err, "spec.definition is immutable")
 	})
 	t.Run("Publisher", func(t *testing.T) {
-		u := s.DeepCopy()
-		u.Spec.Publisher.ID = "someone-else"
-		mustReject(t, k8s.Update(context.Background(), u), "spec.publisher is immutable")
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Spec.Publisher.ID = "someone-else" })
+		mustReject(t, err, "spec.publisher is immutable")
 	})
 	t.Run("DeprecationIsMutable", func(t *testing.T) {
-		u := s.DeepCopy()
-		u.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01", Message: "superseded by subnet-v2"}
-		if err := k8s.Update(context.Background(), u); err != nil {
+		err := update(s.DeepCopy(), func(u *v1alpha1.Schema) {
+			u.Spec.Deprecation = &v1alpha1.Deprecation{Date: "2027-01-01", Message: "superseded by subnet-v2"}
+		})
+		if err != nil {
 			t.Fatalf("deprecating a Schema should be allowed: %v", err)
 		}
 	})
