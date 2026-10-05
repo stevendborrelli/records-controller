@@ -2,11 +2,14 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/stevendborrelli/records-controller/api/v1alpha1"
 )
@@ -49,9 +52,10 @@ func exampleSet(t *testing.T, ns string) *v1alpha1.RecordSet {
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "prod-west"},
 		Spec: v1alpha1.RecordSetSpec{
 			Publisher:  v1alpha1.Publisher{ID: "team-network"},
-			RecordType: "subnet",
-			Current:    ptr.To[int64](4),
-			Retracted:  []v1alpha1.Retraction{{Version: 2, Message: "bad CIDR, superseded by 3"}},
+			RecordType:     "subnet",
+			Current:        ptr.To[int64](4),
+			HighestVersion: ptr.To[int64](5),
+			Retracted:      []v1alpha1.Retraction{{Version: 2, Message: "bad CIDR, superseded by 3"}},
 			Versions: []v1alpha1.RecordSetVersion{
 				version(t, 5, "prod-west-5", "subnet-v1", subnetV1),
 				version(t, 4, "prod-west-4", "subnet-v2", subnetV2),
@@ -80,9 +84,10 @@ func TestRecordSetBecomesReadyWhenRecordsAreValid(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "early"},
 		Spec: v1alpha1.RecordSetSpec{
 			Publisher:  v1alpha1.Publisher{ID: "team-network"},
-			RecordType: "subnet",
-			Current:    ptr.To[int64](1),
-			Versions:   []v1alpha1.RecordSetVersion{version(t, 1, "prod-west-1", "subnet-v1", subnetV1)},
+			RecordType:     "subnet",
+			Current:        ptr.To[int64](1),
+			HighestVersion: ptr.To[int64](1),
+			Versions:       []v1alpha1.RecordSetVersion{version(t, 1, "prod-west-1", "subnet-v1", subnetV1)},
 		},
 	}
 	create(t, rs)
@@ -120,6 +125,18 @@ func TestRecordSetAdmission(t *testing.T) {
 		rs.Spec.Versions = append(rs.Spec.Versions, version(t, 3, "prod-west-3", "subnet-v1", subnetV1))
 		mustReject(t, k8s.Create(context.Background(), rs), "Duplicate value")
 	})
+	t.Run("HighestVersionIsRequired", func(t *testing.T) {
+		rs := exampleSet(t, ns)
+		rs.Name = "no-highest"
+		rs.Spec.HighestVersion = nil
+		mustReject(t, k8s.Create(context.Background(), rs), "highestVersion must be set and at least every published version")
+	})
+	t.Run("HighestVersionCoversVersions", func(t *testing.T) {
+		rs := exampleSet(t, ns)
+		rs.Name = "highest-too-low"
+		rs.Spec.HighestVersion = ptr.To[int64](4)
+		mustReject(t, k8s.Create(context.Background(), rs), "highestVersion must be set and at least every published version")
+	})
 	t.Run("VersionsArePositive", func(t *testing.T) {
 		rs := exampleSet(t, ns)
 		rs.Name = "zero"
@@ -148,9 +165,23 @@ func TestRecordSetAdmission(t *testing.T) {
 		})
 		mustReject(t, err, "spec.publisher is immutable")
 	})
+	t.Run("HighestVersionMustNotDecrease", func(t *testing.T) {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions = u.Spec.Versions[1:]
+			u.Spec.HighestVersion = ptr.To[int64](4)
+		})
+		mustReject(t, err, "highestVersion must not decrease")
+	})
+	t.Run("PublishWithoutRaisingHighestVersion", func(t *testing.T) {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, u.Spec.Versions...)
+		})
+		mustReject(t, err, "highestVersion must be set and at least every published version")
+	})
 	t.Run("PublishNewVersionAndRetract", func(t *testing.T) {
 		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
 			u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, u.Spec.Versions...)
+			u.Spec.HighestVersion = ptr.To[int64](6)
 			u.Spec.Retracted = append(u.Spec.Retracted, v1alpha1.Retraction{Version: 5})
 			u.Spec.Current = ptr.To[int64](6)
 		})
@@ -160,9 +191,8 @@ func TestRecordSetAdmission(t *testing.T) {
 	})
 }
 
-// The proposal says a version number must never be reused, but once retention
-// removes a version the API server has nothing left to compare against.
-func TestRecordSetVersionReuseAfterRemoval(t *testing.T) {
+// highestVersion keeps a removed version's number from being reused.
+func TestRecordSetVersionsAreNeverReused(t *testing.T) {
 	ns := namespace(t)
 	rs := exampleSet(t, ns)
 	create(t, rs)
@@ -176,14 +206,12 @@ func TestRecordSetVersionReuseAfterRemoval(t *testing.T) {
 		t.Fatalf("removing old versions should be allowed: %v", err)
 	}
 
-	// Reusing version 3 for different content is rejected only because it
-	// is lower than the remaining versions.
 	err = update(rs, func(u *v1alpha1.RecordSet) {
 		u.Spec.Versions = append(u.Spec.Versions, version(t, 3, "something-else", "subnet-v1", subnetV1))
 	})
-	mustReject(t, err, "new versions must be greater than every existing version")
+	mustReject(t, err, "version numbers must not be reused")
 
-	// If every version is removed, the old numbers can be reused.
+	// Even with every version removed, highestVersion remembers 5.
 	err = update(rs, func(u *v1alpha1.RecordSet) {
 		u.Spec.Versions, u.Spec.Current = nil, nil
 	})
@@ -193,10 +221,63 @@ func TestRecordSetVersionReuseAfterRemoval(t *testing.T) {
 	err = update(rs, func(u *v1alpha1.RecordSet) {
 		u.Spec.Versions = []v1alpha1.RecordSetVersion{version(t, 4, "something-else", "subnet-v1", subnetV1)}
 	})
+	mustReject(t, err, "version numbers must not be reused")
+
+	err = update(rs, func(u *v1alpha1.RecordSet) {
+		u.Spec.Versions = []v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}
+		u.Spec.HighestVersion = ptr.To[int64](6)
+	})
 	if err != nil {
+		t.Fatalf("publishing above highestVersion should be allowed: %v", err)
+	}
+
+	// Deleting the RecordSet discards highestVersion with it.
+	if err := k8s.Delete(context.Background(), rs); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "RecordSet deletion", func() error {
+		if err := k8s.Get(context.Background(), client.ObjectKeyFromObject(rs), &v1alpha1.RecordSet{}); !kerrors.IsNotFound(err) {
+			return fmt.Errorf("RecordSet still exists: %v", err)
+		}
+		return nil
+	})
+	again := exampleSet(t, ns)
+	if err := k8s.Create(context.Background(), again); err != nil {
 		t.Fatalf("unexpected rejection: %v", err)
 	}
-	t.Log("KNOWN GAP: version 4 was reused for different content after every version was removed")
+	t.Log("KNOWN GAP: a RecordSet deleted and recreated under the same name can reuse its version numbers")
+}
+
+// The Publisher applies retention, and the API server enforces the limit.
+func TestRecordSetRetention(t *testing.T) {
+	ns := namespace(t)
+	rs := exampleSet(t, ns)
+	rs.Spec.Retention = &v1alpha1.Retention{MaxVersions: 4}
+	create(t, rs)
+
+	t.Run("PublishingMustNotExceedMaxVersions", func(t *testing.T) {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, u.Spec.Versions...)
+			u.Spec.HighestVersion = ptr.To[int64](6)
+		})
+		mustReject(t, err, "versions must not exceed retention.maxVersions")
+	})
+	t.Run("LoweringMaxVersionsRequiresRemoval", func(t *testing.T) {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) { u.Spec.Retention.MaxVersions = 2 })
+		mustReject(t, err, "versions must not exceed retention.maxVersions")
+	})
+	t.Run("PublishAndRemoveTheOldest", func(t *testing.T) {
+		// Version 2 is the oldest, and retracted, so its retraction goes too.
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
+			v := u.Spec.Versions
+			u.Spec.Versions = append([]v1alpha1.RecordSetVersion{version(t, 6, "prod-west-6", "subnet-v1", subnetV1)}, v[:len(v)-1]...)
+			u.Spec.HighestVersion = ptr.To[int64](6)
+			u.Spec.Retracted = nil
+		})
+		if err != nil {
+			t.Fatalf("publishing and removing the oldest version should be allowed: %v", err)
+		}
+	})
 }
 
 func TestRecordSetVerification(t *testing.T) {

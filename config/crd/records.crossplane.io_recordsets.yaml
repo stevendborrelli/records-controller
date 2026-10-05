@@ -21,6 +21,9 @@ spec:
     - jsonPath: .spec.current
       name: Current
       type: integer
+    - jsonPath: .spec.highestVersion
+      name: Highest
+      type: integer
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
@@ -59,6 +62,15 @@ spec:
                 format: int64
                 minimum: 1
                 type: integer
+              highestVersion:
+                description: |-
+                  HighestVersion is the highest version number the RecordSet has ever
+                  published. The Publisher raises it in the same update that publishes
+                  a higher version. It never decreases, so a version number cannot be
+                  reused after the version is removed. Required when versions is set.
+                format: int64
+                minimum: 1
+                type: integer
               publisher:
                 description: Publisher of the RecordSet.
                 properties:
@@ -73,6 +85,21 @@ spec:
                 description: RecordType of every Record in the set.
                 minLength: 1
                 type: string
+              retention:
+                description: Retention is the Publisher's retention policy for versions.
+                properties:
+                  maxVersions:
+                    description: |-
+                      MaxVersions is the most versions the RecordSet may list. The
+                      Publisher removes the oldest versions when publishing would exceed
+                      it.
+                    format: int64
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                required:
+                - maxVersions
+                type: object
               retracted:
                 description: Retracted versions.
                 items:
@@ -190,6 +217,21 @@ spec:
             - message: published version entries are immutable
               rule: '!has(self.versions) || !has(oldSelf.versions) || self.versions.all(v,
                 oldSelf.versions.all(o, o.version != v.version || o == v))'
+            - message: highestVersion must be set and at least every published version
+              rule: '!has(self.versions) || (has(self.highestVersion) && self.versions.all(v,
+                v.version <= self.highestVersion))'
+            - message: highestVersion must not decrease
+              rule: '!has(oldSelf.highestVersion) || (has(self.highestVersion) &&
+                self.highestVersion >= oldSelf.highestVersion)'
+            - message: 'version numbers must not be reused: new versions must be greater
+                than the previous highestVersion'
+              rule: '!has(self.versions) || !has(oldSelf.highestVersion) || self.versions.all(v,
+                (has(oldSelf.versions) && oldSelf.versions.exists(o, o.version ==
+                v.version)) || v.version > oldSelf.highestVersion)'
+            - message: versions must not exceed retention.maxVersions; remove the
+                oldest versions when publishing
+              rule: '!has(self.retention) || !has(self.versions) || size(self.versions)
+                <= self.retention.maxVersions'
           status:
             description: RecordSetStatus is the observed state of a RecordSet.
             properties:

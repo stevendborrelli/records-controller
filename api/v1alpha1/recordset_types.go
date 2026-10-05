@@ -59,6 +59,16 @@ type Retraction struct {
 	Message string `json:"message,omitempty"`
 }
 
+// Retention is the Publisher's retention policy for a RecordSet's versions.
+type Retention struct {
+	// MaxVersions is the most versions the RecordSet may list. The
+	// Publisher removes the oldest versions when publishing would exceed
+	// it.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	MaxVersions int64 `json:"maxVersions"`
+}
+
 // RecordSetSpec is the Publisher-owned index over a collection of Records.
 // +kubebuilder:validation:XValidation:rule="!has(self.current) || (has(self.versions) && self.versions.exists(v, v.version == self.current))",message="current must identify a published version"
 // +kubebuilder:validation:XValidation:rule="!has(self.current) || !has(self.retracted) || !self.retracted.exists(r, r.version == self.current)",message="current must not identify a retracted version"
@@ -67,6 +77,10 @@ type Retraction struct {
 // +kubebuilder:validation:XValidation:rule="self.recordType == oldSelf.recordType",message="spec.recordType is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(self.versions) || !has(oldSelf.versions) || self.versions.all(v, oldSelf.versions.exists(o, o.version == v.version) || oldSelf.versions.all(o, o.version < v.version))",message="new versions must be greater than every existing version"
 // +kubebuilder:validation:XValidation:rule="!has(self.versions) || !has(oldSelf.versions) || self.versions.all(v, oldSelf.versions.all(o, o.version != v.version || o == v))",message="published version entries are immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.versions) || (has(self.highestVersion) && self.versions.all(v, v.version <= self.highestVersion))",message="highestVersion must be set and at least every published version"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.highestVersion) || (has(self.highestVersion) && self.highestVersion >= oldSelf.highestVersion)",message="highestVersion must not decrease"
+// +kubebuilder:validation:XValidation:rule="!has(self.versions) || !has(oldSelf.highestVersion) || self.versions.all(v, (has(oldSelf.versions) && oldSelf.versions.exists(o, o.version == v.version)) || v.version > oldSelf.highestVersion)",message="version numbers must not be reused: new versions must be greater than the previous highestVersion"
+// +kubebuilder:validation:XValidation:rule="!has(self.retention) || !has(self.versions) || size(self.versions) <= self.retention.maxVersions",message="versions must not exceed retention.maxVersions; remove the oldest versions when publishing"
 type RecordSetSpec struct {
 	// Publisher of the RecordSet.
 	Publisher Publisher `json:"publisher"`
@@ -79,6 +93,18 @@ type RecordSetSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	Current *int64 `json:"current,omitempty"`
+
+	// HighestVersion is the highest version number the RecordSet has ever
+	// published. The Publisher raises it in the same update that publishes
+	// a higher version. It never decreases, so a version number cannot be
+	// reused after the version is removed. Required when versions is set.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	HighestVersion *int64 `json:"highestVersion,omitempty"`
+
+	// Retention is the Publisher's retention policy for versions.
+	// +optional
+	Retention *Retention `json:"retention,omitempty"`
 
 	// Retracted versions.
 	// +optional
@@ -118,6 +144,7 @@ type RecordSetStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.recordType`
 // +kubebuilder:printcolumn:name="Current",type=integer,JSONPath=`.spec.current`
+// +kubebuilder:printcolumn:name="Highest",type=integer,JSONPath=`.spec.highestVersion`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type RecordSet struct {

@@ -556,7 +556,11 @@ spec:
   phase: Active
   # The Publisher recommends version 4, even though version 5 is newer.
   current: 4
+  # The highest version ever published. It never decreases, so removed
+  # versions cannot be published again.
+  highestVersion: 5
   expiresAt: "2027-01-01T00:00:00Z"
+  # The RecordSet lists at most four versions.
   retention:
     maxVersions: 4
   # Version 2 was retracted. It remains in `versions` and stays addressable,
@@ -616,7 +620,7 @@ spec:
 The following rules apply:
 
 1. A RecordSet version MUST be a positive integer.
-2. A version number MUST NOT be reused.
+2. A version number MUST NOT be reused, including after the version has been removed from `versions`.
 3. Versions MUST increase monotonically.
 4. Gaps between versions may exist.
 5. Each version MUST appear at most once in `versions`.
@@ -627,6 +631,11 @@ The following rules apply:
 10. A version entry's `recordRef.dataDigest` and `schemaRef.digest` MUST equal the referenced Record's `status.dataDigest` and `status.schema.digest`, and `schemaRef.structuralDigest` MUST equal the referenced Schema's `structuralDigest`.
 11. A Record may exist without being referenced by a RecordSet.
 12. A RecordSet MUST NOT modify a Record it references; Records are immutable as described in [Record Immutability](#record-immutability).
+13. `highestVersion` MUST be present when `versions` is not empty, MUST be at least every version in `versions`, and MUST NOT decrease.
+14. A version added to `versions` MUST be greater than the previous `highestVersion`.
+15. When `retention.maxVersions` is present, `versions` MUST NOT list more than `retention.maxVersions` versions.
+
+On Kubernetes-compatible implementations, all of these except 9 and 10 can be enforced by the API server with CEL, and SHOULD be. Invariants 9 and 10 depend on other objects and are verified by a controller.
 
 ### `current`
 
@@ -659,13 +668,25 @@ Retraction does not delete the Record and does not invalidate the Record's Schem
 
 A retracted version MUST NOT become `current`.
 
+### `highestVersion`
+
+`highestVersion` is the highest version number the RecordSet has ever published.
+
+It exists because removing a version, for example under retention, leaves nothing in `versions` to compare a new version against. Without it, a Publisher could remove version 5 and later publish different data as version 5, and a Consumer pinned to version 5 would silently receive it.
+
+The Publisher raises `highestVersion` in the same update that publishes a higher version. Invariants 13 and 14 then make reuse detectable from that single update, without consulting any other object or any controller.
+
+`highestVersion` is part of the RecordSet, so it does not survive the RecordSet's deletion. A Publisher MUST NOT delete and recreate a RecordSet to reuse its version numbers. Implementations cannot detect this from the RecordSet alone.
+
 ### Retention
 
-`retention.maxVersions` expresses the Publisher's intended retention policy for versions in the RecordSet.
+`retention.maxVersions` is the most versions the RecordSet may list.
+
+The Publisher applies retention. When publishing a version would exceed the limit, the Publisher removes the oldest versions in the same update, together with any retraction of a removed version, and moves `current` if it identified one.
+
+An implementation MUST reject a RecordSet that lists more than `retention.maxVersions` versions, and MUST NOT remove versions itself. This keeps the Publisher the only writer of a RecordSet's `spec`: a Publisher that re-applies its full list of versions would otherwise restore versions the implementation removed, and the update would be rejected because those version numbers are below `highestVersion`.
 
 Retention is not a statement that older Records cease to exist immediately.
-
-An implementation may remove old versions from the RecordSet when retention policy permits, but MUST NOT reuse a version number.
 
 Whether the underlying Record remains accessible after removal from the RecordSet is an implementation and storage concern.
 

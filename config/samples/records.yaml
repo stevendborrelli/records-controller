@@ -74,6 +74,7 @@ spec:
     id: team-network
   recordType: subnet
   current: 3
+  highestVersion: 3
   versions:
     - version: 3
       recordRef:

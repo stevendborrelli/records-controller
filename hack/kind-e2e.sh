@@ -292,7 +292,8 @@ step "RecordSet"
 record "$NS" prod-west-2 subnet-v1 | k apply -f - >/dev/null
 record "$NS" prod-west-4 subnet-v2 | k apply -f - >/dev/null
 expect_condition "Record is valid against the v2 Schema" "$NS" record prod-west-4 Valid True/Verified
-recordset() { # name current versions-yaml [retracted-yaml]
+# Every RecordSet here publishes its highest version as current.
+recordset() { # name current versions-yaml [extra-spec-yaml]
 	cat <<EOF
 apiVersion: records.crossplane.io/v1alpha1
 kind: RecordSet
@@ -304,6 +305,7 @@ spec:
     id: team-network
   recordType: subnet
   current: $2
+  highestVersion: $2
 ${4:-}
   versions:
 $3
@@ -338,6 +340,26 @@ expect_condition "Version digest mismatch is detected" "$NS" recordset bad-diges
 
 recordset missing-record 9 "$(version_entry 9 does-not-exist)" | k apply -f - >/dev/null
 expect_condition "Missing Record is detected" "$NS" recordset missing-record Ready False/InvalidVersions
+
+# Removing every version leaves highestVersion behind, so version 4 cannot
+# come back with different content.
+recordset reuse-probe 4 "$(version_entry 4 prod-west-4 subnet-v2)" | k apply -f - >/dev/null
+if k -n "$NS" patch recordset reuse-probe --type=json \
+	-p '[{"op":"remove","path":"/spec/current"},{"op":"remove","path":"/spec/versions"}]' >/dev/null 2>&1; then
+	pass "Every version can be removed"
+else
+	fail "Every version can be removed" "patch was rejected"
+fi
+expect_rejected "Version numbers are never reused" "version numbers must not be reused" \
+	k -n "$NS" patch recordset reuse-probe --type=merge \
+	-p '{"spec":{"versions":[{"version":4,"recordRef":{"name":"prod-west-2"},"schemaRef":{"kind":"Schema","name":"subnet-v1"}}]}}'
+
+recordset retention-probe 2 "$(version_entry 2 prod-west-2)" "  retention:
+    maxVersions: 1" | k apply -f - >/dev/null
+expect_condition "RecordSet within retention is ready" "$NS" recordset retention-probe Ready True/Verified
+expect_rejected "Publishing beyond retention.maxVersions is rejected" "versions must not exceed retention.maxVersions" \
+	k -n "$NS" patch recordset retention-probe --type=merge \
+	-p '{"spec":{"highestVersion":4,"versions":[{"version":4,"recordRef":{"name":"prod-west-4"},"schemaRef":{"kind":"Schema","name":"subnet-v2"}},{"version":2,"recordRef":{"name":"prod-west-2"},"schemaRef":{"kind":"Schema","name":"subnet-v1","structuralDigest":"'"$(status_of subnet-v1 structuralDigest)"'"}}]}}'
 
 # prod-west-4 is bound to subnet-v2, so claiming v1's structure is wrong.
 recordset bad-structural 4 "    - version: 4

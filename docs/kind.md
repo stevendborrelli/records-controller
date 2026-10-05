@@ -269,6 +269,25 @@ kubectl -n platform patch recordset prod-west --type=json -p '[
 Expected: rejected with `new versions must be greater than every existing
 version`.
 
+Version numbers are never reused, even after retention removes a version.
+`spec.highestVersion` remembers the highest number ever published, and the
+Publisher raises it in the same update that publishes a higher version.
+Removing every version and publishing version 3 again is rejected:
+
+```sh
+kubectl -n platform patch recordset prod-west --type=json \
+  -p '[{"op":"remove","path":"/spec/current"},{"op":"remove","path":"/spec/versions"}]'
+kubectl -n platform patch recordset prod-west --type=merge -p '{"spec":{"versions":[
+  {"version":3,"recordRef":{"name":"prod-west-3"},"schemaRef":{"kind":"Schema","name":"subnet-v1"}}]}}'
+```
+
+Expected: the first patch succeeds; the second is rejected with `version
+numbers must not be reused`.
+
+`spec.retention.maxVersions` caps how many versions a RecordSet lists. The
+Publisher removes the oldest versions when it publishes; a RecordSet listing
+more is rejected with `versions must not exceed retention.maxVersions`.
+
 ## Integration tests
 
 The repository also has envtest integration tests that run against a real

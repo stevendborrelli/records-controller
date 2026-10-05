@@ -15,8 +15,8 @@ holds up:
 
 API group: `records.crossplane.io/v1alpha1`.
 
-Not implemented: inline schemas, retention, `expiresAt`, `phase`, and the
-well-known `rawobject-v1` ClusterSchema.
+Not implemented: inline schemas, `expiresAt`, `phase`, and the well-known
+`rawobject-v1` ClusterSchema.
 
 ## What enforces what
 
@@ -33,6 +33,8 @@ well-known `rawobject-v1` ClusterSchema.
 | Versions are unique and positive | CRD list-map keys and minimum |
 | `current` is published and not retracted; retracted versions are published | CRD CEL rules |
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |
+| Version numbers are never reused, even after removal (`highestVersion` covers every version, never decreases, and new versions exceed it) | CRD CEL rules and transition rules |
+| `versions` lists at most `retention.maxVersions` entries; the Publisher removes old ones | CRD CEL rule |
 | Schema references resolve only in the Record's namespace, or to a ClusterSchema | API shape (no `namespace` field) and controller |
 | Contract and data digests (SHA-256 over RFC 8785 JSON) | Schema and Record controllers |
 | Structural digest strips documentation keywords only at keyword positions | Schema controller (`internal/structural`) |
