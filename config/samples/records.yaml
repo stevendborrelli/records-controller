@@ -1,0 +1,80 @@
+# Objects from the Records proposal. Apply after `make install` and with the
+# controller running.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: records.crossplane.io/v1alpha1
+kind: Schema
+metadata:
+  name: subnet-v1
+  namespace: platform
+spec:
+  publisher:
+    id: team-network
+  format: StructuralSchema
+  definition:
+    type: object
+    required: [cidr]
+    properties:
+      cidr:
+        type: string
+      location:
+        type: object
+        properties:
+          region:
+            type: string
+          country:
+            type: string
+      region:
+        type: string
+      zones:
+        type: array
+        items:
+          type: string
+      gateway:
+        type: string
+---
+apiVersion: records.crossplane.io/v1alpha1
+kind: Record
+metadata:
+  name: prod-west-3
+  namespace: platform
+spec:
+  publisher:
+    id: team-network
+  recordType: subnet
+  schema:
+    ref:
+      kind: Schema
+      name: subnet-v1
+  data:
+    cidr: "10.21.0.0/16"
+    location:
+      region: NorthAmerica
+      country: UnitedStates
+    region: us-west-2
+    zones:
+      - us-west-2a
+      - us-west-2b
+      - us-west-2c
+    gateway: "10.21.0.1"
+---
+apiVersion: records.crossplane.io/v1alpha1
+kind: RecordSet
+metadata:
+  name: prod-west
+  namespace: platform
+spec:
+  publisher:
+    id: team-network
+  recordType: subnet
+  current: 3
+  versions:
+    - version: 3
+      recordRef:
+        name: prod-west-3
+      schemaRef:
+        kind: Schema
+        name: subnet-v1

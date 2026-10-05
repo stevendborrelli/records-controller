@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - records.crossplane.io_clusterschemas.yaml
+  - records.crossplane.io_records.yaml
+  - records.crossplane.io_recordsets.yaml
+  - records.crossplane.io_schemas.yaml
