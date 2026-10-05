@@ -6,7 +6,7 @@ holds up:
 
 - `Schema` and `ClusterSchema`: an immutable contract (`format` and
   `definition`) in a named lineage (`shapeGroup`, `shape`, `shapeVersion`),
-  plus mutable `successor`, `replaces`, and `deprecation`, with a contract digest and a
+  plus mutable `successor` and `deprecation`, with a contract digest and a
   structural digest.
 - `Record`: an immutable, schema-bound snapshot with optional
   Publisher-asserted digests.
@@ -29,9 +29,8 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | `status` digests are write-once | CRD CEL transition rules |
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |
-| `replaces` stays in scope: a Schema replaces only Schemas in its namespace, a ClusterSchema only ClusterSchemas; a ClusterSchema's `successor` is a ClusterSchema | CRD CEL rules |
+| A ClusterSchema's `successor` is a ClusterSchema | CRD CEL rule |
 | Publishing under a `shapeGroup` or `recordTypeGroup` requires the `publish` verb on `records.crossplane.io` `groups` with that name | ValidatingAdmissionPolicy and RBAC; open to everyone by default (see [Authorization](#authorization)) |
-| Adding a `replaces` entry requires the `replace` verb on the Schema it names | ValidatingAdmissionPolicy and RBAC; open to everyone by default (see [Authorization](#authorization)) |
 | Versions are unique and positive | CRD list-map keys and minimum |
 | `current` is published and not retracted; retracted versions are published | CRD CEL rules |
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |
@@ -51,28 +50,24 @@ not yet define the digest inputs.
 
 ## Authorization
 
-`shapeGroup`, `recordTypeGroup`, and `replaces` are claims about names and
-Schemas that may belong to someone else. `make deploy` installs three
-ValidatingAdmissionPolicies, in `config/policy`, that check each claim against
-RBAC when an object is created or changed:
+`shapeGroup` and `recordTypeGroup` are claims about names that may belong to
+someone else. `make deploy` installs two ValidatingAdmissionPolicies, in
+`config/policy`, that check each claim against RBAC when an object is created:
 
-| Writing | Requires |
+| Creating | Requires |
 | --- | --- |
 | a Schema or ClusterSchema with `shapeGroup: G` | verb `publish` on `groups` named `G` in `records.crossplane.io` |
 | a Record or RecordSet with `recordTypeGroup: G` | verb `publish` on `groups` named `G` in `records.crossplane.io` |
-| a new `replaces` entry naming Schema `S` | verb `replace` on `schemas` (or `clusterschemas`) named `S` |
 
-`groups` is not a served resource, and `publish` and `replace` are not standard
-verbs. RBAC rules name them anyway, as `certificates.k8s.io` does for
-`signers`. Granting `replace` on a Schema allows claiming to succeed it; it does
-not allow modifying it.
+`groups` is not a served resource, and `publish` is not a standard verb. RBAC
+rules name them anyway, as `certificates.k8s.io` does for `signers`.
 
 ### The alpha default is open
 
 For the alpha, `make deploy` also installs `config/policy/permissive.yaml`: a
-ClusterRole and ClusterRoleBinding named `records-permissive` that grant both
-verbs, on every group and Schema, to `system:authenticated`. The policies run,
-but block no one.
+ClusterRole and ClusterRoleBinding named `records-permissive` that grant
+`publish` on every group to `system:authenticated`. The policies run, but
+block no one.
 
 The controller's own grant, `publish` on the reserved `records.crossplane.io`
 group, is separate and survives locking down.
@@ -110,13 +105,7 @@ group, is separate and survives locking down.
    Do not grant `publish` on `records.crossplane.io`; it is reserved for the
    controller.
 
-2. Grant `replace` only where a Schema's owner agrees to be succeeded. A Role
-   in the owner's namespace covers its Schemas; a ClusterRole with
-   `resourceNames` covers particular ClusterSchemas. Most Schemas need no
-   `replace` grant at all: Consumers discover successors through `successor`,
-   which the predecessor's own Publisher sets.
-
-3. Remove the open grant, and stop redeploys from restoring it:
+2. Remove the open grant, and stop redeploys from restoring it:
 
    ```sh
    kubectl delete clusterrolebinding records-permissive
@@ -125,7 +114,7 @@ group, is separate and survives locking down.
 
    Then remove `permissive.yaml` from `config/policy/kustomization.yaml`.
 
-4. Check a grant with a SubjectAccessReview. `kubectl auth can-i` cannot check
+3. Check a grant with a SubjectAccessReview. `kubectl auth can-i` cannot check
    `groups`, because kubectl only resolves resources the API server serves.
 
    ```sh

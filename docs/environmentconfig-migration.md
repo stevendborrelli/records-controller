@@ -5,7 +5,7 @@ holds untyped data for Compositions to read. It is mutable, its `data` is
 untyped, and no history survives an edit unless
 `kubectl.kubernetes.io/last-applied-configuration` happens to be populated.
 
-We start with a typical EnvironmentConfig:
+Start with a typical EnvironmentConfig:
 
 ```yaml
 apiVersion: apiextensions.crossplane.io/v1beta1
@@ -25,7 +25,7 @@ share it.
 
 ---
 
-## Preconditions
+## Prerequisites
 
 - The CRDs and records-controller installed (`make deploy`, or `make kind-e2e`).
 - The well-known `rawobject-v1` ClusterSchema present and `Ready`. The
@@ -33,8 +33,8 @@ share it.
   Contract](../records.md#the-well-known-rawobject-contract)), or you can install it manually.
 - Namespace `platform` exists.
 - Whoever applies the examples may publish under `platform.example.org`.
-  `make deploy` installs admission policies that check this ([Group and
-  Relationship Authorization](../records.md#group-and-relationship-authorization)),
+  `make deploy` installs admission policies that check this ([Group
+  Authorization](../records.md#group-authorization)),
   but in the alpha they are open to every authenticated user until locked
   down (see Authorization in the [README](../README.md#authorization)).
 
@@ -50,6 +50,8 @@ kubectl get clusterschema rawobject-v1 -o jsonpath='{.status.digest}'
 
 A team with an EnvironmentConfig may not be ready to define an API, but can
 start keeping immutable versions immediately. `rawobject-v1` accepts any JSON object.
+
+The Record contains a few more fields than an EnvironmentConfig, including a publisher ID, the type of and a pointer to the default free-form Schema.
 
 **Apply:**
 
@@ -73,7 +75,7 @@ spec:
     vpcId: vpc-0a1b2c3d
 ```
 
-If we look at this record, we can see the record has computed digests for its data and the schema it is linked to.
+If we look at this record after it is applied, we can see the records-controller has computed digests for its data and the schema it is linked to.
 
 ```shell
 $ kubectl get record -n platform networks-dev-1  -o wide 
@@ -130,9 +132,7 @@ spec:
     vpcId: vpc-0a1b2c3d
 ```
 
-Each digest is SHA-256 over the RFC 8785 canonical JSON of what it covers. For
-data this small, the canonical form can be written by hand: keys sorted, no
-whitespace.
+Each digest is SHA-256 over the RFC 8785 canonical JSON of what it covers. For data this small, the canonical form can be written by hand. The keys are sorted, and whitespace is removed.
 
 ```shell
 # spec.dataDigest covers spec.data.
@@ -163,7 +163,7 @@ Record is rejected with `spec is immutable`.
 
 ### Creating a RecordSet
 
-Then create the `RecordSet`. This is an optional step indicating the Publisher's preferences. Currently we need to manually set the fields:
+We can create a `RecordSet`, which is the how the Publisher indicates how they want to share a group of related records. This is an optional step. We need to manually set the fields in the prototype:
 
 ```yaml
 apiVersion: records.crossplane.io/v1alpha1
@@ -189,7 +189,7 @@ spec:
 ```
 
 `highestVersion` is required whenever `versions` is set
-([`highestVersion`](../records.md#highestversion)).
+([`highestVersion`](../records.md#highestversion)). This is to prevent record deletion causing a repeated version in the set.
 
 **Assert:** `Ready=True` with reason `Verified`, and `status.currentRecord` is
 `networks-dev-1`.
@@ -234,35 +234,9 @@ spec:
       - vpcId
 ```
 
-`networks-v1` does not declare `replaces: rawobject-v1`, and Consumers would
-not act on it if it did. `replaces` is a claim the successor makes about
-someone else's Schema. If Consumers followed it, any Publisher could declare
-`replaces: rawobject-v1` and redirect every Consumer migrating away from the
-free-form contract to a Schema of their choosing. Consumers discover
-successors through `successor` instead, which only the predecessor's
-Publisher sets, and treat `replaces` as informational
-([`successor`](../records.md#successor), [`replaces`](../records.md#replaces)).
-
-Once authorization is locked down, the admission policies also stop the
-claim being made at all. Declaring `replaces` requires the `replace` verb on
-the Schema named. Here, `team-platform-ci` may create ClusterSchemas and
-publish under `platform.example.org`, but has no `replace` grant on
-`rawobject-v1`. Adding this to `networks-v1` is denied:
-
-```yaml
-  replaces:
-    - kind: ClusterSchema
-      name: rawobject-v1
-```
-
-```shell
-$ kubectl --as=team-platform-ci create -f networks-v1.yaml
-Error from server (Forbidden): error when creating "networks-v1.yaml": clusterschemas.records.crossplane.io "networks-v1" is forbidden: ValidatingAdmissionPolicy 'records-replaces' with binding 'records-replaces' denied request: replaces may name only Schemas on which the requester has the replace verb
-```
-
-Nothing names a successor for `rawobject-v1` either: every free-form Record
-shares it, so it has no single successor. The migration is recorded in the
-RecordSet instead: version 1 uses `rawobject-v1` and version 2 uses
+`networks-v1` is not linked to `rawobject-v1`, and nothing names a successor
+for `rawobject-v1`: every free-form Record shares it, so no single Schema
+succeeds it. The migration is recorded in the RecordSet instead: version 1 uses `rawobject-v1` and version 2 uses
 `networks-v1`.
 
 **Assert:**
@@ -425,7 +399,6 @@ Rejected by the API server:
 | Rewrite an existing `versions` entry | `published version entries are immutable` |
 | Change the RecordSet's `recordType` or `recordTypeGroup` | `spec.recordType is immutable`, `spec.recordTypeGroup is immutable` |
 | Lower `highestVersion` | `highestVersion must not decrease` |
-| A namespaced Schema declaring `replaces` of `networks-v1`, a ClusterSchema | `a Schema may only replace Schemas in its own namespace` ([`replaces`](../records.md#replaces)) |
 | A Schema with `format: Avro` | `Unsupported value: "Avro"`. `v1alpha1` permits only `StructuralSchema` ([`spec.format`](../records.md#specformat)) |
 
 Rejected by the admission policies once authorization is locked down, for a user without the matching permission:
@@ -435,7 +408,6 @@ Rejected by the admission policies once authorization is locked down, for a user
 | A Schema with `shapeGroup: network.example.org`, by a user who may publish only under `platform.example.org` | `not authorized to publish under shapeGroup network.example.org` |
 | A Record or RecordSet with another team's `recordTypeGroup` | `not authorized to publish under recordTypeGroup …` |
 | Any Schema with `shapeGroup: records.crossplane.io` | `not authorized to publish under shapeGroup records.crossplane.io`. The group is reserved for the controller |
-| A Schema declaring `replaces` of a Schema the user has no `replace` grant on | `replaces may name only Schemas on which the requester has the replace verb` |
 
 Reported by the controller, because they depend on other objects:
 
@@ -451,7 +423,7 @@ little:
 
 | Attempt | Expect |
 |---|---|
-| Add `deprecation` to `networks-v1`, or name its `successor` | accepted. `successor`, `replaces`, and `deprecation` are the mutable part of a Schema |
+| Add `deprecation` to `networks-v1`, or name its `successor` | accepted. `successor` and `deprecation` are the mutable part of a Schema |
 | Move `current`, add to `retracted`, raise `retention.maxVersions` | accepted |
 
 ---

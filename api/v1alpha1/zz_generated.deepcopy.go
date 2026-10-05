@@ -511,11 +511,6 @@ func (in *SchemaSpec) DeepCopyInto(out *SchemaSpec) {
 		*out = new(SchemaReference)
 		**out = **in
 	}
-	if in.Replaces != nil {
-		in, out := &in.Replaces, &out.Replaces
-		*out = make([]SchemaReference, len(*in))
-		copy(*out, *in)
-	}
 	if in.Deprecation != nil {
 		in, out := &in.Deprecation, &out.Deprecation
 		*out = new(Deprecation)

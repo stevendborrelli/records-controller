@@ -64,8 +64,8 @@ spec:
             description: |-
               SchemaSpec is the contract and Publisher metadata shared by Schema and
               ClusterSchema. Publisher, the lineage (shapeGroup, shape, and
-              shapeVersion), format, and definition are immutable; successor, replaces,
-              and deprecation are mutable Publisher assertions. Only format and definition
+              shapeVersion), format, and definition are immutable; successor and
+              deprecation are mutable Publisher assertions. Only format and definition
               are inputs to the contract digest.
             properties:
               definition:
@@ -103,35 +103,6 @@ spec:
                 required:
                 - id
                 type: object
-              replaces:
-                description: |-
-                  Replaces identifies Schemas this Schema claims to succeed. The claim is
-                  made by this Schema's Publisher, not by the owner of the Schemas it
-                  names, so it is informational only: Consumers must not use it to
-                  discover successors. A Schema may replace only Schemas in its own
-                  namespace; a ClusterSchema only ClusterSchemas.
-                items:
-                  description: |-
-                    SchemaReference refers to a Schema or ClusterSchema. A reference to a
-                    Schema has no namespace; it always resolves in the referencing object's own
-                    namespace.
-                  properties:
-                    kind:
-                      description: Kind of the referenced Schema.
-                      enum:
-                      - Schema
-                      - ClusterSchema
-                      type: string
-                    name:
-                      description: Name of the referenced Schema.
-                      minLength: 1
-                      type: string
-                  required:
-                  - kind
-                  - name
-                  type: object
-                maxItems: 32
-                type: array
               shape:
                 description: |-
                   Shape is the form of data within the shapeGroup, like a Kubernetes
@@ -157,8 +128,8 @@ spec:
               successor:
                 description: |-
                   Successor identifies the Schema this Schema's Publisher names as its
-                  intended successor. Consumers discover successors here: the claim is
-                  made by the Publisher of the Schema they already use.
+                  intended successor. The claim is made by the Publisher of the Schema a
+                  Consumer already uses, so following it trusts no one new.
                 properties:
                   kind:
                     description: Kind of the referenced Schema.
@@ -283,9 +254,6 @@ spec:
         required:
         - spec
         type: object
-        x-kubernetes-validations:
-        - message: a Schema may only replace Schemas in its own namespace
-          rule: '!has(self.spec.replaces) || self.spec.replaces.all(r, r.kind == ''Schema'')'
     selectableFields:
     - jsonPath: .spec.shapeGroup
     - jsonPath: .spec.shape

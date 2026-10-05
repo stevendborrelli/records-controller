@@ -241,8 +241,6 @@ else
 	fail "A Schema's Publisher can name its successor" "patch was rejected"
 fi
 
-expect_rejected "A Schema cannot claim to replace a ClusterSchema" "a Schema may only replace Schemas in its own namespace" \
-	k -n "$NS" patch schema immutable-probe --type=merge -p '{"spec":{"replaces":[{"kind":"ClusterSchema","name":"rawobject-v1"}]}}'
 
 expect_rejected "Deprecation date must be a full-date" "spec.deprecation.date" \
 	k -n "$NS" patch schema subnet-v1 --type=merge -p '{"spec":{"deprecation":{"date":"2027-01-01T00:00:00Z"}}}'
@@ -462,7 +460,7 @@ subjects:
     name: e2e-tenant
 EOF
 
-tenant_schema() { # name shape-group [replaces-schema]
+tenant_schema() { # name shape-group
 	cat <<EOF
 apiVersion: records.crossplane.io/v1alpha1
 kind: Schema
@@ -478,10 +476,9 @@ spec:
   format: StructuralSchema
   definition:
     type: object
-${3:+  replaces: [{kind: Schema, name: $3\}]}
 EOF
 }
-as_tenant() { # name shape-group [replaces-schema]
+as_tenant() { # name shape-group
 	tenant_schema "$@" | k --as=e2e-tenant create --dry-run=server -f -
 }
 
@@ -496,9 +493,8 @@ eventually_allowed() { # description command...
 	fail "$desc" "$("$@" 2>&1)"
 }
 
-# The alpha default: permissive RBAC lets everyone publish and claim.
+# The alpha default: permissive RBAC lets everyone publish under any group.
 eventually_allowed "Alpha default: anyone may publish under any group" as_tenant tenant-v1 network.example.org
-eventually_allowed "Alpha default: anyone may claim to replace a Schema" as_tenant tenant-v2 tenant.example.org subnet-v1
 
 # Lock down, as the README describes, then check each denial.
 k delete clusterrolebinding records-permissive --wait=true >/dev/null
@@ -513,8 +509,6 @@ expect_rejected "Locked down: publishing under another team's shapeGroup is deni
 	as_tenant tenant-v1 network.example.org
 expect_rejected "Locked down: the reserved records.crossplane.io group is denied" "not authorized to publish under shapeGroup records.crossplane.io" \
 	as_tenant tenant-v1 records.crossplane.io
-expect_rejected "Locked down: claiming to replace another team's Schema is denied" "replaces may name only Schemas on which the requester has the replace verb" \
-	as_tenant tenant-v2 tenant.example.org subnet-v1
 
 # Restore the alpha default.
 k apply -k "$ROOT/config/policy" >/dev/null

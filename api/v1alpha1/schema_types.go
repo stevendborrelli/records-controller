@@ -7,8 +7,8 @@ import (
 
 // SchemaSpec is the contract and Publisher metadata shared by Schema and
 // ClusterSchema. Publisher, the lineage (shapeGroup, shape, and
-// shapeVersion), format, and definition are immutable; successor, replaces,
-// and deprecation are mutable Publisher assertions. Only format and definition
+// shapeVersion), format, and definition are immutable; successor and
+// deprecation are mutable Publisher assertions. Only format and definition
 // are inputs to the contract digest.
 // +kubebuilder:validation:XValidation:rule="self.publisher == oldSelf.publisher",message="spec.publisher is immutable"
 // +kubebuilder:validation:XValidation:rule="self.shapeGroup == oldSelf.shapeGroup",message="spec.shapeGroup is immutable"
@@ -48,19 +48,10 @@ type SchemaSpec struct {
 	Definition runtime.RawExtension `json:"definition"`
 
 	// Successor identifies the Schema this Schema's Publisher names as its
-	// intended successor. Consumers discover successors here: the claim is
-	// made by the Publisher of the Schema they already use.
+	// intended successor. The claim is made by the Publisher of the Schema a
+	// Consumer already uses, so following it trusts no one new.
 	// +optional
 	Successor *SchemaReference `json:"successor,omitempty"`
-
-	// Replaces identifies Schemas this Schema claims to succeed. The claim is
-	// made by this Schema's Publisher, not by the owner of the Schemas it
-	// names, so it is informational only: Consumers must not use it to
-	// discover successors. A Schema may replace only Schemas in its own
-	// namespace; a ClusterSchema only ClusterSchemas.
-	// +optional
-	// +kubebuilder:validation:MaxItems=32
-	Replaces []SchemaReference `json:"replaces,omitempty"`
 
 	// Deprecation, when present, declares the Schema deprecated.
 	// +optional
@@ -105,7 +96,6 @@ type SchemaStatus struct {
 }
 
 // A Schema is a namespaced contract that Records validate against.
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.replaces) || self.spec.replaces.all(r, r.kind == 'Schema')",message="a Schema may only replace Schemas in its own namespace"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
@@ -150,7 +140,6 @@ type SchemaList struct {
 // +kubebuilder:selectablefield:JSONPath=`.spec.shape`
 // +kubebuilder:selectablefield:JSONPath=`.spec.shapeVersion`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.replaces) || self.spec.replaces.all(r, r.kind == 'ClusterSchema')",message="a ClusterSchema may only replace ClusterSchemas"
 // +kubebuilder:validation:XValidation:rule="!has(self.spec.successor) || self.spec.successor.kind == 'ClusterSchema'",message="a ClusterSchema's successor must be a ClusterSchema"
 type ClusterSchema struct {
 	metav1.TypeMeta   `json:",inline"`

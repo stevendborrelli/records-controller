@@ -497,27 +497,6 @@ func TestContractDigestIgnoresLineage(t *testing.T) {
 	}
 }
 
-func TestClusterSchemaCannotReplaceNamespacedSchema(t *testing.T) {
-	cs := &v1alpha1.ClusterSchema{
-		ObjectMeta: metav1.ObjectMeta{Name: "replaces-namespaced"},
-		Spec:       schemaSpec(subnetV1),
-	}
-	cs.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindSchema, Name: "subnet-v0"}}
-	mustReject(t, k8s.Create(context.Background(), cs), "a ClusterSchema may only replace ClusterSchemas")
-}
-
-// replaces is claimed by the successor, so it is confined to the claimant's
-// own namespace: a tenant cannot claim to succeed a cluster-wide contract.
-func TestSchemaCannotReplaceClusterSchema(t *testing.T) {
-	ns := namespace(t)
-	s := &v1alpha1.Schema{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "replaces-cluster"},
-		Spec:       schemaSpec(subnetV1),
-	}
-	s.Spec.Replaces = []v1alpha1.SchemaReference{{Kind: v1alpha1.KindClusterSchema, Name: RawObjectName}}
-	mustReject(t, k8s.Create(context.Background(), s), "a Schema may only replace Schemas in its own namespace")
-}
-
 func TestClusterSchemaSuccessorMustBeClusterSchema(t *testing.T) {
 	cs := &v1alpha1.ClusterSchema{
 		ObjectMeta: metav1.ObjectMeta{Name: "namespaced-successor"},

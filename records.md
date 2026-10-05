@@ -36,7 +36,7 @@ A `Record` contains immutable facts:
 A `Schema` contains an immutable contract plus mutable Publisher metadata describing that contract:
 
 - the lineage and compatibility group it belongs to;
-- its successor, and the contracts it claims to replace; and
+- its successor; and
 - its deprecation state.
 
 A `RecordSet` contains mutable Publisher metadata describing a collection of immutable Records:
@@ -122,7 +122,7 @@ Every field under `spec` is immutable. On Kubernetes-compatible implementations 
 
 `recordTypeGroup` and `recordType` together identify the kind of thing represented by the Record, in the same way a Kubernetes API group and kind identify a resource type:
 
-- **`recordTypeGroup`** owns the type, such as `network.example.org`. Like `shapeGroup`, it is required, MUST be a lowercase RFC 1123 DNS subdomain, and is a claim rather than proof that the Publisher controls the domain, which implementations SHOULD authorize (see [Group and Relationship Authorization](#group-and-relationship-authorization)).
+- **`recordTypeGroup`** owns the type, such as `network.example.org`. Like `shapeGroup`, it is required, MUST be a lowercase RFC 1123 DNS subdomain, and is a claim rather than proof that the Publisher controls the domain, which implementations SHOULD authorize (see [Group Authorization](#group-authorization)).
 - **`recordType`** names the type within that group, such as `subnet`, `supported-eks-versions`, or `cloud-region`.
 
 Two Publishers may each publish `subnet` Records: `network.example.org/subnet` and `storage.example.org/subnet` are different types.
@@ -283,7 +283,7 @@ A namespaced `Record` MUST reference only a `Schema` in its own namespace or a `
 
 A Record is bound to the immutable contract identified by the Schema's digest, not to mutable metadata associated with the Schema.
 
-Changes to a Schema's `successor`, `replaces`, or `deprecation` fields therefore do not change the contract to which an existing Record is bound.
+Changes to a Schema's `successor` or `deprecation` fields therefore do not change the contract to which an existing Record is bound.
 
 A Record MUST NOT be considered valid until both of its digests have been computed and recorded in `status`, and any asserted digests have been verified. If a Schema reference resolves to a contract whose digest does not match an asserted `spec.schema.digest`, the Record is invalid.
 
@@ -338,9 +338,6 @@ spec:
           type: string
       gateway:
         type: string
-  replaces:
-    - kind: Schema
-      name: subnet-v0
   successor:
     kind: Schema
     name: subnet-v2
@@ -360,8 +357,7 @@ The following properties of a Schema are immutable:
 
 The following properties are mutable Publisher assertions:
 
-- `spec.successor`;
-- `spec.replaces`; and
+- `spec.successor`; and
 - `spec.deprecation`.
 
 Changing an immutable contract requires creating a new Schema.
@@ -378,7 +374,7 @@ A Schema names the contract lineage it belongs to using three fields, modeled on
 
 A lineage is identified by `shapeGroup` and `shape` together. Two Publishers may each define a `subnet` shape: `network.example.org/subnet` and `storage.example.org/subnet` are different lineages.
 
-`shapeGroup` is required and MUST be a lowercase RFC 1123 DNS subdomain. The `records.crossplane.io` group is reserved for contracts defined by this specification. As with `publisher.id`, a `shapeGroup` is a claim, not proof that the Publisher controls that domain; implementations SHOULD authorize it when a Schema is written (see [Group and Relationship Authorization](#group-and-relationship-authorization)).
+`shapeGroup` is required and MUST be a lowercase RFC 1123 DNS subdomain. The `records.crossplane.io` group is reserved for contracts defined by this specification. As with `publisher.id`, a `shapeGroup` is a claim, not proof that the Publisher controls that domain; implementations SHOULD authorize it when a Schema is written (see [Group Authorization](#group-authorization)).
 
 Unlike a Kubernetes API version, which has exactly one schema, a `shapeVersion` may contain several Schemas. Each is an immutable revision identified by its digest, such as a revision that adds an optional field.
 
@@ -424,11 +420,10 @@ Schema relationships have different strengths.
 | `structuralDigest` | Same validation structure, differing only in documentation | Computation |
 | `shapeGroup` + `shape` + `shapeVersion` | Publisher asserts membership in the same compatibility group | Publisher |
 | `successor` | A Schema's Publisher names the Schema that succeeds it | Publisher of the predecessor |
-| `replaces` | A Schema's Publisher claims to succeed another Schema | Publisher of the successor |
 
 The first two relationships are mechanically verifiable.
 
-The others are Publisher assertions and are not verified by this specification. They differ in who makes them, which determines whether a Consumer can rely on them.
+The others are Publisher assertions and are not verified by this specification.
 
 ### `successor`
 
@@ -448,26 +443,7 @@ The claim is made by the Publisher of the Schema the Consumer already uses, so f
 
 `successor` does not, by itself, establish that data valid under one Schema is valid under the other, nor that a Consumer can automatically migrate between them. A Consumer MUST determine independently whether it can consume the successor. A successor may belong to a different `shapeVersion`, or a different lineage, which supports migrations where the representation or compatibility model changes.
 
-### `replaces`
-
-`replaces` is the reverse claim. If Schema B declares:
-
-```yaml
-replaces:
-  - kind: Schema
-    name: schema-a
-```
-
-then B's Publisher is claiming that B succeeds A.
-
-The claim is made by B's Publisher, not by A's. Anyone who can create a Schema can claim to succeed any other, and `publisher.id` is itself only a claim. `replaces` is therefore informational: Consumers MUST NOT use it to discover successors, and MUST NOT follow it automatically. A forged `replaces` aimed at a widely used Schema would otherwise redirect every Consumer that migrates from it.
-
-To limit the reach of a claim:
-
-- a `Schema` MUST replace only `Schema`s in its own namespace; and
-- a `ClusterSchema` MUST replace only `ClusterSchema`s.
-
-Implementations SHOULD also require that whoever declares `replaces` is authorized, by the owner of each Schema it names, to make that claim. On Kubernetes-compatible implementations this can be enforced at admission (see [Group and Relationship Authorization](#group-and-relationship-authorization)). Even then, `successor` remains the relationship Consumers follow.
+There is deliberately no reverse relationship by which a Schema claims to succeed another. That claim would be made by the successor's Publisher rather than the predecessor's, so anyone able to create a Schema could aim one at a widely used Schema and redirect every Consumer migrating from it. `publisher.id` cannot prevent this, since it is itself only a claim.
 
 ### Deprecation
 
@@ -819,39 +795,33 @@ publisher:
 
 identifies the claimed Publisher but does not establish that the object was actually created by the network team.
 
-## Group and Relationship Authorization
+## Group Authorization
 
-Several fields are claims one party makes about names or objects that may belong to another:
+`shapeGroup` and `recordTypeGroup` are claims about names that may belong to someone else:
 
 | Claim | Made by | About |
 | --- | --- | --- |
 | `shapeGroup` | a Schema's author | the owner of a lineage |
 | `recordTypeGroup` | a Record's or RecordSet's author | the owner of a record type |
-| `replaces` | a successor Schema's author | another Schema |
 
-Unchecked, anyone who can create a Schema can join another team's lineage, publish Records of another team's type, or claim to succeed another team's Schema. Field selectors and Consumers then cannot tell the forged objects from the real ones.
+Unchecked, anyone who can create a Schema can join another team's lineage, and anyone who can create a Record can publish another team's type. Field selectors and Consumers then cannot tell the forged objects from the real ones.
 
 Implementations SHOULD authorize these claims when an object is written:
 
-- publishing a Schema under a `shapeGroup`, or a Record or RecordSet under a `recordTypeGroup`, requires permission to publish under that group;
-- adding an entry to `replaces` requires permission, granted by the named Schema's owner, to claim to replace it; and
+- publishing a Schema under a `shapeGroup`, or a Record or RecordSet under a `recordTypeGroup`, requires permission to publish under that group; and
 - permission to publish under the reserved `records.crossplane.io` group is held only by the implementation.
 
-On Kubernetes-compatible implementations, these checks SHOULD be ValidatingAdmissionPolicies that use the CEL `authorizer`, so that permission is ordinary RBAC:
+On Kubernetes-compatible implementations, these checks SHOULD be ValidatingAdmissionPolicies that use the CEL `authorizer`, so that permission is ordinary RBAC. Publishing under a group is the verb `publish` on the resource `groups` in the `records.crossplane.io` API group, with the group as the resource name. The resource is not served; RBAC rules may name it regardless, as `certificates.k8s.io` does for `signers`. For example, this rule grants publishing under `network.example.org`:
 
-- Publishing under a group is the verb `publish` on the resource `groups` in the `records.crossplane.io` API group, with the group as the resource name. The resource is not served; RBAC rules may name it regardless, as `certificates.k8s.io` does for `signers`. For example, this rule grants publishing under `network.example.org`:
+```yaml
+rules:
+  - apiGroups: ["records.crossplane.io"]
+    resources: ["groups"]
+    resourceNames: ["network.example.org"]
+    verbs: ["publish"]
+```
 
-  ```yaml
-  rules:
-    - apiGroups: ["records.crossplane.io"]
-      resources: ["groups"]
-      resourceNames: ["network.example.org"]
-      verbs: ["publish"]
-  ```
-
-- Claiming to replace a Schema requires the verb `replace` on that Schema. Like `publish`, it is not a standard verb, and granting it does not allow modifying the Schema. Entries already present in `replaces` are not re-checked, so an author can keep editing a Schema whose `replaces` someone else set.
-
-Authorization happens where an object is written. It does not travel with an object copied to another cluster, where Consumers again have only claims. That is why Consumers discover successors through `successor`, which the predecessor's own Publisher sets, rather than through `replaces`.
+Authorization happens where an object is written. It does not travel with an object copied to another cluster, where Consumers again have only claims. The relationships Consumers follow are therefore ones a Publisher makes about its own objects, such as `successor`.
 
 ## Summary
 
