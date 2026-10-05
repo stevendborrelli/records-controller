@@ -100,7 +100,7 @@ func (r *RecordReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // verify checks a Record and, if it is valid, records its digests in status.
 // It returns the reason and message of the Valid condition.
 func (r *RecordReconciler) verify(ctx context.Context, rec *v1alpha1.Record) (string, string, error) {
-	spec, err := r.resolveSchema(ctx, rec)
+	spec, err := getSchemaSpec(ctx, r, rec.Namespace, rec.Spec.Schema.Ref)
 	if kerrors.IsNotFound(err) {
 		return ReasonSchemaNotFound, fmt.Sprintf("%s %q not found", rec.Spec.Schema.Ref.Kind, rec.Spec.Schema.Ref.Name), nil
 	}
@@ -145,16 +145,4 @@ func (r *RecordReconciler) verify(ctx context.Context, rec *v1alpha1.Record) (st
 	rec.Status.DataDigest = dataDigest
 	rec.Status.Schema = &v1alpha1.RecordSchemaStatus{Digest: schemaDigest}
 	return ReasonVerified, "", nil
-}
-
-func (r *RecordReconciler) resolveSchema(ctx context.Context, rec *v1alpha1.Record) (*v1alpha1.SchemaSpec, error) {
-	ref := rec.Spec.Schema.Ref
-	if ref.Kind == v1alpha1.KindClusterSchema {
-		s := &v1alpha1.ClusterSchema{}
-		err := r.Get(ctx, types.NamespacedName{Name: ref.Name}, s)
-		return &s.Spec, err
-	}
-	s := &v1alpha1.Schema{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: rec.Namespace, Name: ref.Name}, s)
-	return &s.Spec, err
 }

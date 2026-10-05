@@ -250,6 +250,8 @@ For `StructuralSchema`, the following documentation-only fields are removed befo
 
 Implementations MUST NOT remove additional fields unless a future version of this specification explicitly defines them as documentation-only.
 
+These keywords are removed only where they are keywords: from the root schema, and from every schema nested under `properties`, `patternProperties`, `additionalProperties`, `items`, `additionalItems`, `allOf`, `anyOf`, `oneOf`, `not`, `definitions`, or `dependencies`. Anywhere else the same names are data and MUST be kept. For example, a property named `description` under `properties`, a `title` key inside a `default` or `enum` value, and the fields of an `x-kubernetes-validations` rule are all part of the structure.
+
 The complete definition is used for `digest` because documentation can carry semantic meaning to humans. For example, changing a description from "size in GB" to "size in MB" does not change the structural validation rules but can materially change the meaning of the data.
 
 The documentation fields are excluded from `structuralDigest` because Consumers do not generally parse them when validating or consuming data.

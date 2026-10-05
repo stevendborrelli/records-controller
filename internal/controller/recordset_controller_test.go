@@ -34,8 +34,9 @@ func version(t *testing.T, v int64, record, schema, def string) v1alpha1.RecordS
 		Version:   v,
 		RecordRef: v1alpha1.RecordReference{Name: record, DataDigest: mustDigest(t, subnetData)},
 		SchemaRef: v1alpha1.VersionSchemaReference{
-			SchemaReference: v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: schema},
-			Digest:          mustContractDigest(t, def),
+			SchemaReference:  v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: schema},
+			Digest:           mustContractDigest(t, def),
+			StructuralDigest: mustStructuralDigest(t, def),
 		},
 	}
 }
@@ -233,6 +234,10 @@ func TestRecordSetVerification(t *testing.T) {
 		"SchemaDigestMismatch": {
 			mutate: func(rs *v1alpha1.RecordSet) { rs.Spec.Versions[1].SchemaRef.Digest = bogusDigest },
 			want:   "version 4: schemaRef.digest",
+		},
+		"StructuralDigestMismatch": {
+			mutate: func(rs *v1alpha1.RecordSet) { rs.Spec.Versions[1].SchemaRef.StructuralDigest = bogusDigest },
+			want:   "version 4: schemaRef.structuralDigest",
 		},
 		"SchemaRefMismatch": {
 			mutate: func(rs *v1alpha1.RecordSet) {

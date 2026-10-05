@@ -73,7 +73,7 @@ expect_rejected() { # description want command...
 	fi
 }
 
-schema() { # namespace name required-fields
+schema() { # namespace name required-fields [shape-version]
 	cat <<EOF
 apiVersion: records.crossplane.io/v1alpha1
 kind: Schema
@@ -85,7 +85,7 @@ spec:
     id: team-network
   shapeGroup: network.example.org
   shape: subnet
-  shapeVersion: v1
+  shapeVersion: ${4:-v1}
   format: StructuralSchema
   definition:
     type: object
@@ -131,14 +131,21 @@ ${5:-}
 EOF
 }
 
-version_entry() { # version record-name
+# status_of prints a status field of a Schema in $NS.
+status_of() { # schema-name field
+	k -n "$NS" get schema "$1" -o jsonpath="{.status.$2}"
+}
+
+version_entry() { # version record-name [schema-name]
+	local schema=${3:-subnet-v1}
 	cat <<EOF
     - version: $1
       recordRef:
         name: $2
       schemaRef:
         kind: Schema
-        name: subnet-v1
+        name: $schema
+        structuralDigest: $(status_of "$schema" structuralDigest)
 EOF
 }
 
@@ -174,8 +181,31 @@ k create namespace "$OTHER_NS" >/dev/null
 step "Schema"
 schema "$NS" subnet-v1 cidr | k apply -f - >/dev/null
 expect_condition "Schema gets a contract digest" "$NS" schema subnet-v1 Ready True/Verified
-digest=$(k -n "$NS" get schema subnet-v1 -o jsonpath='{.status.digest}')
+digest=$(status_of subnet-v1 digest)
 info "subnet-v1 digest: $digest"
+[[ $(status_of subnet-v1 structuralDigest) == sha256:* ]] &&
+	pass "Schema gets a structural digest" || fail "Schema gets a structural digest" "status.structuralDigest is empty"
+
+# subnet-v2 makes gateway required: a new shapeVersion in the same lineage.
+schema "$NS" subnet-v2 "cidr, gateway" v2 | k apply -f - >/dev/null
+expect_condition "v2 Schema is ready" "$NS" schema subnet-v2 Ready True/Verified
+[[ $(status_of subnet-v2 structuralDigest) != "$(status_of subnet-v1 structuralDigest)" ]] &&
+	pass "v1 and v2 have different structural digests" ||
+	fail "v1 and v2 have different structural digests" "both are $(status_of subnet-v1 structuralDigest)"
+
+# A documentation-only revision of v1 is a different contract with the same
+# structure.
+schema "$NS" subnet-v1-documented cidr |
+	sed 's/cidr: {type: string}/cidr: {type: string, description: "IPv4 CIDR block"}/' |
+	k apply -f - >/dev/null
+expect_condition "Documented v1 Schema is ready" "$NS" schema subnet-v1-documented Ready True/Verified
+if [[ $(status_of subnet-v1-documented digest) != "$digest" &&
+	$(status_of subnet-v1-documented structuralDigest) == "$(status_of subnet-v1 structuralDigest)" ]]; then
+	pass "Documentation changes the digest but not the structural digest"
+else
+	fail "Documentation changes the digest but not the structural digest" \
+		"digests $(status_of subnet-v1-documented digest) vs $digest, structural $(status_of subnet-v1-documented structuralDigest) vs $(status_of subnet-v1 structuralDigest)"
+fi
 
 # Probe immutability on throwaway objects, so that if the API server accepts
 # the change the remaining checks are unaffected.
@@ -194,6 +224,9 @@ if k -n "$NS" get schemas --field-selector spec.shapeGroup=network.example.org,s
 else
 	fail "Field selectors list a Schema lineage" "subnet-v1 not selected by its lineage, or another lineage matched"
 fi
+v2s=$(k -n "$NS" get schemas --field-selector spec.shapeGroup=network.example.org,spec.shape=subnet,spec.shapeVersion=v2 -o name)
+[[ $v2s == schema.records.crossplane.io/subnet-v2 ]] &&
+	pass "Field selectors separate shapeVersions" || fail "Field selectors separate shapeVersions" "v2 selected: $v2s"
 
 if k -n "$NS" patch schema subnet-v1 --type=merge -p '{"spec":{"deprecation":{"date":"2027-01-01","message":"superseded by subnet-v2"}}}' >/dev/null 2>&1; then
 	pass "Schema deprecation is mutable"
@@ -257,7 +290,8 @@ expect_condition "Recreating the Schema with a new contract is detected" "$NS" r
 # ---------------------------------------------------------------------------
 step "RecordSet"
 record "$NS" prod-west-2 subnet-v1 | k apply -f - >/dev/null
-record "$NS" prod-west-4 subnet-v1 | k apply -f - >/dev/null
+record "$NS" prod-west-4 subnet-v2 | k apply -f - >/dev/null
+expect_condition "Record is valid against the v2 Schema" "$NS" record prod-west-4 Valid True/Verified
 recordset() { # name current versions-yaml [retracted-yaml]
 	cat <<EOF
 apiVersion: records.crossplane.io/v1alpha1
@@ -276,7 +310,7 @@ $3
 EOF
 }
 
-recordset prod-west 4 "$(version_entry 4 prod-west-4)
+recordset prod-west 4 "$(version_entry 4 prod-west-4 subnet-v2)
 $(version_entry 2 prod-west-2)" "  retracted:
     - version: 2
       message: bad CIDR" | k apply -f - >/dev/null
@@ -304,6 +338,16 @@ expect_condition "Version digest mismatch is detected" "$NS" recordset bad-diges
 
 recordset missing-record 9 "$(version_entry 9 does-not-exist)" | k apply -f - >/dev/null
 expect_condition "Missing Record is detected" "$NS" recordset missing-record Ready False/InvalidVersions
+
+# prod-west-4 is bound to subnet-v2, so claiming v1's structure is wrong.
+recordset bad-structural 4 "    - version: 4
+      recordRef:
+        name: prod-west-4
+      schemaRef:
+        kind: Schema
+        name: subnet-v2
+        structuralDigest: $(status_of subnet-v1 structuralDigest)" | k apply -f - >/dev/null
+expect_condition "Structural digest mismatch is detected" "$NS" recordset bad-structural Ready False/InvalidVersions
 
 # ---------------------------------------------------------------------------
 step "Result"

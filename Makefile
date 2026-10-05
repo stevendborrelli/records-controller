@@ -10,7 +10,7 @@ generate: ## Regenerate deepcopy code, CRDs, and RBAC.
 	$(CONTROLLER_GEN) rbac:roleName=records-controller paths=./internal/... output:rbac:artifacts:config=config/rbac
 
 test-unit: ## Run tests that do not need an API server.
-	go test ./internal/digest/... ./internal/validate/... -count=1
+	go test ./internal/digest/... ./internal/structural/... ./internal/validate/... -count=1
 
 test: ## Run all tests, including envtest integration tests.
 	go test ./... -count=1

@@ -6,16 +6,17 @@ holds up:
 
 - `Schema` and `ClusterSchema`: an immutable contract (`format` and
   `definition`) in a named lineage (`shapeGroup`, `shape`, `shapeVersion`),
-  plus mutable `replaces` and `deprecation`, with one digest.
+  plus mutable `replaces` and `deprecation`, with a contract digest and a
+  structural digest.
 - `Record`: an immutable, schema-bound snapshot with optional
   Publisher-asserted digests.
 - `RecordSet`: a mutable index with `current`, retraction, and per-version
-  digests.
+  data, contract, and structural digests.
 
 API group: `records.crossplane.io/v1alpha1`.
 
-Not implemented: inline schemas, `structuralDigest`, retention, `expiresAt`,
-`phase`, and the well-known `rawobject-v1` ClusterSchema.
+Not implemented: inline schemas, retention, `expiresAt`, `phase`, and the
+well-known `rawobject-v1` ClusterSchema.
 
 ## What enforces what
 
@@ -34,10 +35,11 @@ Not implemented: inline schemas, `structuralDigest`, retention, `expiresAt`,
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |
 | Schema references resolve only in the Record's namespace, or to a ClusterSchema | API shape (no `namespace` field) and controller |
 | Contract and data digests (SHA-256 over RFC 8785 JSON) | Schema and Record controllers |
+| Structural digest strips documentation keywords only at keyword positions | Schema controller (`internal/structural`) |
 | Asserted digests match computed digests | Record controller |
 | Data validates against the Schema; unknown fields are rejected, not pruned | Record controller |
 | A Schema name reused for a different contract invalidates bound Records | Record controller |
-| Versions ordered high to low; Records exist, match publisher, `recordType`, schema, and digests | RecordSet controller |
+| Versions ordered high to low; Records exist, match publisher, `recordType`, schema, and digests, including structural digests | RecordSet controller |
 
 The contract digest covers `format` and `definition` only; the proposal does
 not yet define the digest inputs.

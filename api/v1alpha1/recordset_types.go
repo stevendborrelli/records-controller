@@ -22,6 +22,12 @@ type VersionSchemaReference struct {
 	// Digest is the expected digest of the Record's contract.
 	// +optional
 	Digest Digest `json:"digest,omitempty"`
+
+	// StructuralDigest is the expected structural digest of the Record's
+	// contract. Consumers can filter versions by it without resolving
+	// Records or Schemas.
+	// +optional
+	StructuralDigest Digest `json:"structuralDigest,omitempty"`
 }
 
 // RecordSetVersion is one published version of a RecordSet. Entries are

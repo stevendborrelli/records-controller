@@ -135,6 +135,26 @@ func (r *RecordSetReconciler) verify(ctx context.Context, rs *v1alpha1.RecordSet
 		if d := v.SchemaRef.Digest; d != "" && (rec.Status.Schema == nil || d != rec.Status.Schema.Digest) {
 			p("schemaRef.digest %s does not match the Record's contract digest", d)
 		}
+		if d := v.SchemaRef.StructuralDigest; d != "" {
+			// The Record is valid, so its Schema resolves to the contract
+			// it was bound to.
+			spec, err := getSchemaSpec(ctx, r, rs.Namespace, v.SchemaRef.SchemaReference)
+			if kerrors.IsNotFound(err) {
+				p("%s %q not found", v.SchemaRef.Kind, v.SchemaRef.Name)
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			sd, err := StructuralDigest(*spec)
+			if err != nil {
+				p("cannot compute the structural digest of %s %q: %v", v.SchemaRef.Kind, v.SchemaRef.Name, err)
+				continue
+			}
+			if d != sd {
+				p("schemaRef.structuralDigest %s does not match the Schema's structural digest %s", d, sd)
+			}
+		}
 	}
 	return problems, nil
 }

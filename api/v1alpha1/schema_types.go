@@ -74,10 +74,17 @@ type Deprecation struct {
 
 // SchemaStatus is the observed state of a Schema or ClusterSchema.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.digest) || (has(self.digest) && self.digest == oldSelf.digest)",message="status.digest is write-once"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.structuralDigest) || (has(self.structuralDigest) && self.structuralDigest == oldSelf.structuralDigest)",message="status.structuralDigest is write-once"
 type SchemaStatus struct {
 	// Digest of the canonicalized contract. Write-once.
 	// +optional
 	Digest Digest `json:"digest,omitempty"`
+
+	// StructuralDigest of the canonicalized contract after removing
+	// documentation-only keywords. Schemas that differ only in
+	// documentation have the same structural digest. Write-once.
+	// +optional
+	StructuralDigest Digest `json:"structuralDigest,omitempty"`
 
 	// ObservedGeneration is the generation last reconciled.
 	// +optional

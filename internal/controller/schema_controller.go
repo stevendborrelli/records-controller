@@ -21,7 +21,8 @@ const (
 	ReasonContractChanged   = "ContractChanged"
 )
 
-// SchemaReconciler records the contract digest of Schemas and ClusterSchemas.
+// SchemaReconciler records the contract and structural digests of Schemas
+// and ClusterSchemas.
 type SchemaReconciler struct {
 	client.Client
 	// Cluster selects ClusterSchemas instead of Schemas.
@@ -41,7 +42,7 @@ func (r *SchemaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// Reconcile computes and records a Schema's digest.
+// Reconcile computes and records a Schema's digests.
 func (r *SchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
 		obj    client.Object
@@ -64,6 +65,10 @@ func (r *SchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	cond := metav1.ConditionTrue
 
 	d, err := ContractDigest(*spec)
+	var sd v1alpha1.Digest
+	if err == nil {
+		sd, err = StructuralDigest(*spec)
+	}
 	switch {
 	case err != nil:
 		cond, reason, message = metav1.ConditionFalse, ReasonInvalidDefinition, err.Error()
@@ -78,7 +83,7 @@ func (r *SchemaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			cond, reason, message = metav1.ConditionFalse, ReasonInvalidDefinition, err.Error()
 			break
 		}
-		status.Digest = d
+		status.Digest, status.StructuralDigest = d, sd
 	}
 
 	setCondition(&status.Conditions, gen, v1alpha1.ConditionReady, cond, reason, message)

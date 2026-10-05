@@ -44,6 +44,25 @@ const subnetV2 = `{
   }
 }`
 
+// subnetV1Documented is subnetV1 with documentation, including a property
+// named description, which is data and is kept by the structural digest.
+const subnetV1Documented = `{
+  "type": "object",
+  "title": "Subnet",
+  "description": "A subnet published by the network team.",
+  "required": ["cidr"],
+  "properties": {
+    "cidr": {"type": "string", "description": "IPv4 CIDR block.", "example": "10.21.0.0/16"},
+    "location": {
+      "type": "object",
+      "properties": {"region": {"type": "string"}, "country": {"type": "string", "title": "Country"}}
+    },
+    "region": {"type": "string"},
+    "zones": {"type": "array", "items": {"type": "string", "description": "An availability zone."}},
+    "gateway": {"type": "string", "externalDocs": {"url": "https://example.org/gateways"}}
+  }
+}`
+
 const subnetData = `{"cidr":"10.21.0.0/16","location":{"region":"NorthAmerica","country":"UnitedStates"},"region":"us-west-2","zones":["us-west-2a","us-west-2b","us-west-2c"],"gateway":"10.21.0.1"}`
 
 func raw(s string) runtime.RawExtension { return runtime.RawExtension{Raw: []byte(s)} }
@@ -108,6 +127,15 @@ func mustContractDigest(t *testing.T, def string) v1alpha1.Digest {
 	return d
 }
 
+func mustStructuralDigest(t *testing.T, def string) v1alpha1.Digest {
+	t.Helper()
+	d, err := StructuralDigest(schemaSpec(def))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 // A digest that is well formed but matches nothing.
 const bogusDigest v1alpha1.Digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -118,6 +146,41 @@ func TestSchemaRecordsContractDigest(t *testing.T) {
 	if want := mustContractDigest(t, subnetV1); s.Status.Digest != want {
 		t.Errorf("status.digest: got %s, want %s", s.Status.Digest, want)
 	}
+	if want := mustStructuralDigest(t, subnetV1); s.Status.StructuralDigest != want {
+		t.Errorf("status.structuralDigest: got %s, want %s", s.Status.StructuralDigest, want)
+	}
+}
+
+// Schemas that differ only in documentation have different digests but the
+// same structural digest.
+func TestSchemaStructuralDigestIgnoresDocumentation(t *testing.T) {
+	ns := namespace(t)
+	plain := newSchema(t, ns, "plain", subnetV1)
+	documented := newSchema(t, ns, "documented", subnetV1Documented)
+	plain = waitForCondition(t, plain, schemaConds, v1alpha1.ConditionReady, metav1.ConditionTrue, ReasonVerified)
+	documented = waitForCondition(t, documented, schemaConds, v1alpha1.ConditionReady, metav1.ConditionTrue, ReasonVerified)
+
+	if plain.Status.Digest == documented.Status.Digest {
+		t.Errorf("status.digest should differ when documentation differs, both are %s", plain.Status.Digest)
+	}
+	if plain.Status.StructuralDigest != documented.Status.StructuralDigest {
+		t.Errorf("status.structuralDigest should not depend on documentation: %s and %s", plain.Status.StructuralDigest, documented.Status.StructuralDigest)
+	}
+}
+
+func TestSchemaStatusDigestsAreWriteOnce(t *testing.T) {
+	ns := namespace(t)
+	s := newSchema(t, ns, "write-once", subnetV1)
+	s = waitForCondition(t, s, schemaConds, v1alpha1.ConditionReady, metav1.ConditionTrue, ReasonVerified)
+
+	t.Run("Digest", func(t *testing.T) {
+		err := updateStatus(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Status.Digest = bogusDigest })
+		mustReject(t, err, "status.digest is write-once")
+	})
+	t.Run("StructuralDigest", func(t *testing.T) {
+		err := updateStatus(s.DeepCopy(), func(u *v1alpha1.Schema) { u.Status.StructuralDigest = "" })
+		mustReject(t, err, "status.structuralDigest is write-once")
+	})
 }
 
 func TestSchemaRejectsNonStructuralDefinition(t *testing.T) {
