@@ -89,6 +89,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   schema:
     ref:
@@ -119,7 +120,16 @@ Every field under `spec` is immutable. On Kubernetes-compatible implementations 
 
 `spec.schema` MUST identify a Schema, either through a reference or an inline definition. A Record MUST validate against the identified Schema.
 
-`recordType` identifies the kind of thing represented by the Record, such as `subnet`, `supported-eks-versions`, or `cloud-region`. It is independent of the Schema's `shape`.
+`recordTypeGroup` and `recordType` together identify the kind of thing represented by the Record, in the same way a Kubernetes API group and kind identify a resource type:
+
+- **`recordTypeGroup`** owns the type, such as `network.example.org`. Like `shapeGroup`, it is required, MUST be a lowercase RFC 1123 DNS subdomain, and is a claim rather than proof that the Publisher controls the domain.
+- **`recordType`** names the type within that group, such as `subnet`, `supported-eks-versions`, or `cloud-region`.
+
+Two Publishers may each publish `subnet` Records: `network.example.org/subnet` and `storage.example.org/subnet` are different types.
+
+The type is independent of the Schema's lineage. A Record of type `network.example.org/subnet` may be validated against the `records.crossplane.io/rawObject/v1` contract.
+
+On Kubernetes-compatible implementations, `recordTypeGroup` and `recordType` SHOULD be declared as selectable fields on Records and RecordSets, so that Records of one type can be listed with a field selector.
 
 ### Record Identity
 
@@ -140,6 +150,7 @@ Record names MUST NOT be reused for different Record contents. A Publisher that 
 Once created, the following properties of a Record MUST NOT change:
 
 - `spec.publisher`;
+- `spec.recordTypeGroup`;
 - `spec.recordType`;
 - `spec.schema`, including `spec.schema.digest`;
 - `spec.data`;
@@ -554,6 +565,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   phase: Active
   # The Publisher recommends version 4, even though version 5 is newer.
@@ -629,7 +641,7 @@ The following rules apply:
 6. `versions` MUST be ordered from newest to oldest.
 7. `current`, when present, MUST identify a published version.
 8. `current` MUST NOT identify a retracted version.
-9. Every Record referenced by a version MUST have the same `publisher` and `recordType` as the RecordSet.
+9. Every Record referenced by a version MUST have the same `publisher`, `recordTypeGroup`, and `recordType` as the RecordSet.
 10. A version entry's `recordRef.dataDigest` and `schemaRef.digest` MUST equal the referenced Record's `status.dataDigest` and `status.schema.digest`, and `schemaRef.structuralDigest` MUST equal the referenced Schema's `structuralDigest`.
 11. A Record may exist without being referenced by a RecordSet.
 12. A RecordSet MUST NOT modify a Record it references; Records are immutable as described in [Record Immutability](#record-immutability).
@@ -723,7 +735,7 @@ A Consumer SHOULD make Record selection explicit.
 For example, a Consumer that follows the current compatible Record may use the following process:
 
 1. Locate the desired RecordSet.
-2. Verify the expected Publisher identity and `recordType`.
+2. Verify the expected Publisher identity, `recordTypeGroup`, and `recordType`.
 3. Read the available versions.
 4. Exclude retracted versions unless explicitly configured otherwise.
 5. Select `current` or another version according to its policy.

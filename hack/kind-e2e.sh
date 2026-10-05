@@ -113,6 +113,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   schema:
     ref:
@@ -291,6 +292,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: notes
   schema:
     ref:
@@ -301,6 +303,9 @@ spec:
     nested: {list: [1, two, {three: true}]}
 EOF
 expect_condition "Any JSON object is valid against rawobject-v1" "$NS" record free-form Valid True/Verified
+notes=$(k -n "$NS" get records --field-selector spec.recordTypeGroup=network.example.org,spec.recordType=notes -o name)
+[[ $notes == record.records.crossplane.io/free-form ]] &&
+	pass "Field selectors list Records by type" || fail "Field selectors list Records by type" "selected: $notes"
 
 old_uid=$(k get clusterschema rawobject-v1 -o jsonpath='{.metadata.uid}')
 k delete clusterschema rawobject-v1 --wait=true >/dev/null
@@ -344,6 +349,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   current: $2
   highestVersion: $2
@@ -366,6 +372,9 @@ expect_rejected "current must not be retracted" "current must not identify a ret
 
 expect_rejected "new versions must be higher" "new versions must be greater than every existing version" \
 	k -n "$NS" patch recordset prod-west --type=json -p '[{"op":"add","path":"/spec/versions/-","value":{"version":1,"recordRef":{"name":"prod-west-2"},"schemaRef":{"kind":"Schema","name":"subnet-v1"}}}]'
+
+expect_rejected "RecordSet recordTypeGroup is immutable" "spec.recordTypeGroup is immutable" \
+	k -n "$NS" patch recordset prod-west --type=merge -p '{"spec":{"recordTypeGroup":"storage.example.org"}}'
 
 expect_rejected "published entries are immutable" "published version entries are immutable" \
 	k -n "$NS" patch recordset prod-west --type=json -p '[{"op":"replace","path":"/spec/versions/0/recordRef/name","value":"prod-west-2"}]'

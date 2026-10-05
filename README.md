@@ -23,8 +23,9 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | --- | --- |
 | Record `spec` is immutable | CRD CEL rule (`self == oldSelf`) |
 | Schema `publisher`, lineage, `format`, `definition` are immutable | CRD CEL rules |
-| `shapeGroup` is a lowercase DNS subdomain | CRD pattern |
-| Schemas can be listed by lineage (`kubectl get schemas --field-selector spec.shapeGroup=…,spec.shape=…`) | CRD `selectableFields` |
+| `shapeGroup` and `recordTypeGroup` are lowercase DNS subdomains | CRD pattern |
+| Schemas can be listed by lineage (`kubectl get schemas --field-selector spec.shapeGroup=…,spec.shape=…`), and Records and RecordSets by type (`spec.recordTypeGroup`, `spec.recordType`) | CRD `selectableFields` |
+| RecordSet `publisher`, `recordTypeGroup`, `recordType` are immutable | CRD CEL rules |
 | `status` digests are write-once | CRD CEL transition rules |
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |
@@ -41,7 +42,7 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | Data validates against the Schema; unknown fields are rejected, not pruned | Record controller |
 | A Schema name reused for a different contract invalidates bound Records | Record controller |
 | The well-known `rawobject-v1` ClusterSchema exists, and is recreated if deleted; a conflicting one is reported, not replaced | Controller at startup, and the ClusterSchema controller |
-| Versions ordered high to low; Records exist, match publisher, `recordType`, schema, and digests, including structural digests | RecordSet controller |
+| Versions ordered high to low; Records exist, match publisher, `recordTypeGroup`, `recordType`, schema, and digests, including structural digests | RecordSet controller |
 
 The contract digest covers `format` and `definition` only; the proposal does
 not yet define the digest inputs.

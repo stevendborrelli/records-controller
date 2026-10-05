@@ -30,7 +30,7 @@ func RawObject() *v1alpha1.ClusterSchema {
 		ObjectMeta: metav1.ObjectMeta{Name: RawObjectName},
 		Spec: v1alpha1.SchemaSpec{
 			Publisher:    v1alpha1.Publisher{ID: "system"},
-			ShapeGroup:   v1alpha1.GroupVersion.Group,
+			ShapeGroup:   v1alpha1.Group(v1alpha1.GroupVersion.Group),
 			Shape:        "rawObject",
 			ShapeVersion: "v1",
 			Format:       v1alpha1.FormatStructuralSchema,

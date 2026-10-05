@@ -160,6 +160,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   schema:
     ref:
@@ -191,6 +192,7 @@ metadata:
 spec:
   publisher:
     id: team-network
+  recordTypeGroup: network.example.org
   recordType: subnet
   schema:
     ref:

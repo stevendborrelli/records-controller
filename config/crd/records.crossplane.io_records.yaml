@@ -15,6 +15,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.recordTypeGroup
+      name: Group
+      type: string
     - jsonPath: .spec.recordType
       name: Type
       type: string
@@ -75,8 +78,16 @@ spec:
               recordType:
                 description: |-
                   RecordType identifies the kind of thing the Record represents, such as
-                  subnet or cloud-region.
+                  subnet or cloud-region, within its recordTypeGroup.
                 minLength: 1
+                type: string
+              recordTypeGroup:
+                description: |-
+                  RecordTypeGroup owns the recordType. Together they identify the kind
+                  of thing the Record represents, so two Publishers' subnet types stay
+                  distinct.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
               schema:
                 description: Schema identifies the contract the data was published
@@ -112,6 +123,7 @@ spec:
             - data
             - publisher
             - recordType
+            - recordTypeGroup
             - schema
             type: object
             x-kubernetes-validations:
@@ -208,6 +220,9 @@ spec:
         required:
         - spec
         type: object
+    selectableFields:
+    - jsonPath: .spec.recordTypeGroup
+    - jsonPath: .spec.recordType
     served: true
     storage: true
     subresources:

@@ -20,6 +20,14 @@ type Publisher struct {
 	ID string `json:"id"`
 }
 
+// A Group owns a name, like a Kubernetes API group: shapeGroup owns a Schema
+// lineage, and recordTypeGroup owns a recordType. It is a lowercase RFC 1123
+// DNS subdomain, such as network.example.org. It is a claim, not proof that
+// the Publisher controls the domain.
+// +kubebuilder:validation:MaxLength=253
+// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
+type Group string
+
 // SchemaFormat identifies the schema language of a Schema definition.
 // +kubebuilder:validation:Enum=StructuralSchema
 type SchemaFormat string

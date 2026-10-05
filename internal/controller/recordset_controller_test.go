@@ -51,11 +51,12 @@ func exampleSet(t *testing.T, ns string) *v1alpha1.RecordSet {
 	return &v1alpha1.RecordSet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "prod-west"},
 		Spec: v1alpha1.RecordSetSpec{
-			Publisher:  v1alpha1.Publisher{ID: "team-network"},
-			RecordType:     "subnet",
-			Current:        ptr.To[int64](4),
-			HighestVersion: ptr.To[int64](5),
-			Retracted:      []v1alpha1.Retraction{{Version: 2, Message: "bad CIDR, superseded by 3"}},
+			Publisher:       v1alpha1.Publisher{ID: "team-network"},
+			RecordTypeGroup: "network.example.org",
+			RecordType:      "subnet",
+			Current:         ptr.To[int64](4),
+			HighestVersion:  ptr.To[int64](5),
+			Retracted:       []v1alpha1.Retraction{{Version: 2, Message: "bad CIDR, superseded by 3"}},
 			Versions: []v1alpha1.RecordSetVersion{
 				version(t, 5, "prod-west-5", "subnet-v1", subnetV1),
 				version(t, 4, "prod-west-4", "subnet-v2", subnetV2),
@@ -83,11 +84,12 @@ func TestRecordSetBecomesReadyWhenRecordsAreValid(t *testing.T) {
 	rs := &v1alpha1.RecordSet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "early"},
 		Spec: v1alpha1.RecordSetSpec{
-			Publisher:  v1alpha1.Publisher{ID: "team-network"},
-			RecordType:     "subnet",
-			Current:        ptr.To[int64](1),
-			HighestVersion: ptr.To[int64](1),
-			Versions:       []v1alpha1.RecordSetVersion{version(t, 1, "prod-west-1", "subnet-v1", subnetV1)},
+			Publisher:       v1alpha1.Publisher{ID: "team-network"},
+			RecordTypeGroup: "network.example.org",
+			RecordType:      "subnet",
+			Current:         ptr.To[int64](1),
+			HighestVersion:  ptr.To[int64](1),
+			Versions:        []v1alpha1.RecordSetVersion{version(t, 1, "prod-west-1", "subnet-v1", subnetV1)},
 		},
 	}
 	create(t, rs)
@@ -158,6 +160,10 @@ func TestRecordSetAdmission(t *testing.T) {
 			u.Spec.Versions[1].RecordRef.Name = "prod-west-5"
 		})
 		mustReject(t, err, "published version entries are immutable")
+	})
+	t.Run("RecordTypeGroupIsImmutable", func(t *testing.T) {
+		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) { u.Spec.RecordTypeGroup = "storage.example.org" })
+		mustReject(t, err, "spec.recordTypeGroup is immutable")
 	})
 	t.Run("PublisherIsImmutable", func(t *testing.T) {
 		err := update(rs.DeepCopy(), func(u *v1alpha1.RecordSet) {
@@ -289,6 +295,11 @@ func TestRecordSetVerification(t *testing.T) {
 	create(t, other)
 	waitForCondition(t, other, recordConds, v1alpha1.ConditionValid, metav1.ConditionTrue, ReasonVerified)
 
+	otherGroup := recordObj(ns, "other-group", "subnet-v1", subnetData)
+	otherGroup.Spec.RecordTypeGroup = "storage.example.org"
+	create(t, otherGroup)
+	waitForCondition(t, otherGroup, recordConds, v1alpha1.ConditionValid, metav1.ConditionTrue, ReasonVerified)
+
 	cases := map[string]struct {
 		mutate func(rs *v1alpha1.RecordSet)
 		want   string
@@ -307,6 +318,10 @@ func TestRecordSetVerification(t *testing.T) {
 		"PublisherMismatch": {
 			mutate: func(rs *v1alpha1.RecordSet) { rs.Spec.Versions[0].RecordRef.Name = "other-publisher" },
 			want:   `version 5: Record publisher "team-storage" does not match`,
+		},
+		"RecordTypeGroupMismatch": {
+			mutate: func(rs *v1alpha1.RecordSet) { rs.Spec.Versions[0].RecordRef.Name = "other-group" },
+			want:   "version 5: Record type storage.example.org/subnet does not match RecordSet type network.example.org/subnet",
 		},
 		"DataDigestMismatch": {
 			mutate: func(rs *v1alpha1.RecordSet) { rs.Spec.Versions[0].RecordRef.DataDigest = bogusDigest },

@@ -94,10 +94,11 @@ func recordObj(ns, name, schemaName, data string) *v1alpha1.Record {
 	return &v1alpha1.Record{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
 		Spec: v1alpha1.RecordSpec{
-			Publisher:  v1alpha1.Publisher{ID: "team-network"},
-			RecordType: "subnet",
-			Schema:     v1alpha1.RecordSchema{Ref: v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: schemaName}},
-			Data:       raw(data),
+			Publisher:       v1alpha1.Publisher{ID: "team-network"},
+			RecordTypeGroup: "network.example.org",
+			RecordType:      "subnet",
+			Schema:          v1alpha1.RecordSchema{Ref: v1alpha1.SchemaReference{Kind: v1alpha1.KindSchema, Name: schemaName}},
+			Data:            raw(data),
 		},
 	}
 }
@@ -304,6 +305,45 @@ func TestRecordSpecIsImmutable(t *testing.T) {
 		err := update(r.DeepCopy(), func(u *v1alpha1.Record) { u.Spec.Data = raw(`{"cidr":"10.99.0.0/16"}`) })
 		mustReject(t, err, "spec is immutable")
 	})
+	t.Run("RecordTypeGroup", func(t *testing.T) {
+		err := update(r.DeepCopy(), func(u *v1alpha1.Record) { u.Spec.RecordTypeGroup = "storage.example.org" })
+		mustReject(t, err, "spec is immutable")
+	})
+}
+
+func TestRecordTypeGroupFormat(t *testing.T) {
+	ns := namespace(t)
+	for _, group := range []string{"", "Network.Example.org", "network_example.org"} {
+		r := recordObj(ns, "", "subnet-v1", subnetData)
+		r.GenerateName = "bad-group-"
+		r.Spec.RecordTypeGroup = v1alpha1.Group(group)
+		mustReject(t, k8s.Create(context.Background(), r), "spec.recordTypeGroup")
+	}
+}
+
+// Two Publishers' subnet Records are distinct types, and a field selector
+// separates them.
+func TestRecordTypeSelectableFields(t *testing.T) {
+	ns := namespace(t)
+	newSchema(t, ns, "subnet-v1", subnetV1)
+	network := recordObj(ns, "network-subnet", "subnet-v1", subnetData)
+	storage := recordObj(ns, "storage-subnet", "subnet-v1", subnetData)
+	storage.Spec.RecordTypeGroup = "storage.example.org"
+	create(t, network)
+	create(t, storage)
+
+	l := &v1alpha1.RecordList{}
+	fields := client.MatchingFields{"spec.recordTypeGroup": "network.example.org", "spec.recordType": "subnet"}
+	if err := k8s.List(context.Background(), l, client.InNamespace(ns), fields); err != nil {
+		t.Fatalf("cannot list Records by %v: %v", fields, err)
+	}
+	if len(l.Items) != 1 || l.Items[0].Name != "network-subnet" {
+		var got []string
+		for _, r := range l.Items {
+			got = append(got, r.Name)
+		}
+		t.Errorf("Records matching %v: got %v, want [network-subnet]", fields, got)
+	}
 }
 
 func TestRecordStatusDigestsAreWriteOnce(t *testing.T) {
@@ -375,7 +415,7 @@ func TestSchemaShapeGroupFormat(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, GenerateName: "bad-group-"},
 			Spec:       schemaSpec(subnetV1),
 		}
-		s.Spec.ShapeGroup = group
+		s.Spec.ShapeGroup = v1alpha1.Group(group)
 		mustReject(t, k8s.Create(context.Background(), s), "spec.shapeGroup")
 	}
 }
@@ -393,7 +433,7 @@ func TestSchemaLineageSelectableFields(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
 			Spec:       schemaSpec(subnetV1),
 		}
-		s.Spec.ShapeGroup, s.Spec.Shape, s.Spec.ShapeVersion = lineage[0], lineage[1], lineage[2]
+		s.Spec.ShapeGroup, s.Spec.Shape, s.Spec.ShapeVersion = v1alpha1.Group(lineage[0]), lineage[1], lineage[2]
 		create(t, s)
 	}
 

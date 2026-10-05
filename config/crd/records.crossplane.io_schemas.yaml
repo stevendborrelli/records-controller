@@ -133,9 +133,8 @@ spec:
                 type: string
               shapeGroup:
                 description: |-
-                  ShapeGroup owns the contract lineage, like a Kubernetes API group.
-                  Together with shape it identifies the lineage. It is a claim, not
-                  proof that the Publisher controls the domain.
+                  ShapeGroup owns the contract lineage. Together with shape it
+                  identifies the lineage.
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string

@@ -21,8 +21,13 @@ type RecordSpec struct {
 	// Publisher of the Record.
 	Publisher Publisher `json:"publisher"`
 
+	// RecordTypeGroup owns the recordType. Together they identify the kind
+	// of thing the Record represents, so two Publishers' subnet types stay
+	// distinct.
+	RecordTypeGroup Group `json:"recordTypeGroup"`
+
 	// RecordType identifies the kind of thing the Record represents, such as
-	// subnet or cloud-region.
+	// subnet or cloud-region, within its recordTypeGroup.
 	// +kubebuilder:validation:MinLength=1
 	RecordType string `json:"recordType"`
 
@@ -75,8 +80,11 @@ type RecordStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Group",type=string,JSONPath=`.spec.recordTypeGroup`
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.recordType`
 // +kubebuilder:printcolumn:name="Schema",type=string,JSONPath=`.spec.schema.ref.name`
+// +kubebuilder:selectablefield:JSONPath=`.spec.recordTypeGroup`
+// +kubebuilder:selectablefield:JSONPath=`.spec.recordType`
 // +kubebuilder:printcolumn:name="Valid",type=string,JSONPath=`.status.conditions[?(@.type=="Valid")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Record struct {

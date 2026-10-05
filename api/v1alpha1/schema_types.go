@@ -20,12 +20,9 @@ type SchemaSpec struct {
 	// Publisher of the Schema.
 	Publisher Publisher `json:"publisher"`
 
-	// ShapeGroup owns the contract lineage, like a Kubernetes API group.
-	// Together with shape it identifies the lineage. It is a claim, not
-	// proof that the Publisher controls the domain.
-	// +kubebuilder:validation:MaxLength=253
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
-	ShapeGroup string `json:"shapeGroup"`
+	// ShapeGroup owns the contract lineage. Together with shape it
+	// identifies the lineage.
+	ShapeGroup Group `json:"shapeGroup"`
 
 	// Shape is the form of data within the shapeGroup, like a Kubernetes
 	// kind.

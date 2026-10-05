@@ -15,6 +15,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.recordTypeGroup
+      name: Group
+      type: string
     - jsonPath: .spec.recordType
       name: Type
       type: string
@@ -84,6 +87,11 @@ spec:
               recordType:
                 description: RecordType of every Record in the set.
                 minLength: 1
+                type: string
+              recordTypeGroup:
+                description: RecordTypeGroup of every Record in the set.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
               retention:
                 description: Retention is the Publisher's retention policy for versions.
@@ -195,6 +203,7 @@ spec:
             required:
             - publisher
             - recordType
+            - recordTypeGroup
             type: object
             x-kubernetes-validations:
             - message: current must identify a published version
@@ -208,6 +217,8 @@ spec:
                 && self.versions.exists(v, v.version == r.version))'
             - message: spec.publisher is immutable
               rule: self.publisher == oldSelf.publisher
+            - message: spec.recordTypeGroup is immutable
+              rule: self.recordTypeGroup == oldSelf.recordTypeGroup
             - message: spec.recordType is immutable
               rule: self.recordType == oldSelf.recordType
             - message: new versions must be greater than every existing version
@@ -307,6 +318,9 @@ spec:
         required:
         - spec
         type: object
+    selectableFields:
+    - jsonPath: .spec.recordTypeGroup
+    - jsonPath: .spec.recordType
     served: true
     storage: true
     subresources:

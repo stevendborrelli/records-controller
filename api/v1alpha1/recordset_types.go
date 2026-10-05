@@ -74,6 +74,7 @@ type Retention struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.current) || !has(self.retracted) || !self.retracted.exists(r, r.version == self.current)",message="current must not identify a retracted version"
 // +kubebuilder:validation:XValidation:rule="!has(self.retracted) || self.retracted.all(r, has(self.versions) && self.versions.exists(v, v.version == r.version))",message="retracted versions must be published versions"
 // +kubebuilder:validation:XValidation:rule="self.publisher == oldSelf.publisher",message="spec.publisher is immutable"
+// +kubebuilder:validation:XValidation:rule="self.recordTypeGroup == oldSelf.recordTypeGroup",message="spec.recordTypeGroup is immutable"
 // +kubebuilder:validation:XValidation:rule="self.recordType == oldSelf.recordType",message="spec.recordType is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(self.versions) || !has(oldSelf.versions) || self.versions.all(v, oldSelf.versions.exists(o, o.version == v.version) || oldSelf.versions.all(o, o.version < v.version))",message="new versions must be greater than every existing version"
 // +kubebuilder:validation:XValidation:rule="!has(self.versions) || !has(oldSelf.versions) || self.versions.all(v, oldSelf.versions.all(o, o.version != v.version || o == v))",message="published version entries are immutable"
@@ -84,6 +85,9 @@ type Retention struct {
 type RecordSetSpec struct {
 	// Publisher of the RecordSet.
 	Publisher Publisher `json:"publisher"`
+
+	// RecordTypeGroup of every Record in the set.
+	RecordTypeGroup Group `json:"recordTypeGroup"`
 
 	// RecordType of every Record in the set.
 	// +kubebuilder:validation:MinLength=1
@@ -142,11 +146,14 @@ type RecordSetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Group",type=string,JSONPath=`.spec.recordTypeGroup`
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.recordType`
 // +kubebuilder:printcolumn:name="Current",type=integer,JSONPath=`.spec.current`
 // +kubebuilder:printcolumn:name="Highest",type=integer,JSONPath=`.spec.highestVersion`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:selectablefield:JSONPath=`.spec.recordTypeGroup`
+// +kubebuilder:selectablefield:JSONPath=`.spec.recordType`
 type RecordSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

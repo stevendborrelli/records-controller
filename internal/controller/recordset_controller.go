@@ -119,8 +119,8 @@ func (r *RecordSetReconciler) verify(ctx context.Context, rs *v1alpha1.RecordSet
 		if rec.Spec.Publisher != rs.Spec.Publisher {
 			p("Record publisher %q does not match RecordSet publisher %q", rec.Spec.Publisher.ID, rs.Spec.Publisher.ID)
 		}
-		if rec.Spec.RecordType != rs.Spec.RecordType {
-			p("Record recordType %q does not match RecordSet recordType %q", rec.Spec.RecordType, rs.Spec.RecordType)
+		if rec.Spec.RecordTypeGroup != rs.Spec.RecordTypeGroup || rec.Spec.RecordType != rs.Spec.RecordType {
+			p("Record type %s/%s does not match RecordSet type %s/%s", rec.Spec.RecordTypeGroup, rec.Spec.RecordType, rs.Spec.RecordTypeGroup, rs.Spec.RecordType)
 		}
 		if rec.Spec.Schema.Ref != v.SchemaRef.SchemaReference {
 			p("schemaRef %s %q does not match the Record's schema %s %q", v.SchemaRef.Kind, v.SchemaRef.Name, rec.Spec.Schema.Ref.Kind, rec.Spec.Schema.Ref.Name)
