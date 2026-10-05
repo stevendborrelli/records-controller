@@ -10,6 +10,7 @@ import (
 // +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas;clusterschemas;records;recordsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=records.crossplane.io,resources=schemas/status;clusterschemas/status;records/status;recordsets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=records.crossplane.io,resources=clusterschemas,verbs=create
+// +kubebuilder:rbac:groups=records.crossplane.io,resources=groups,resourceNames=records.crossplane.io,verbs=publish
 
 // Setup registers every Records controller with the manager, and provides the
 // well-known rawobject-v1 ClusterSchema.

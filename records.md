@@ -122,7 +122,7 @@ Every field under `spec` is immutable. On Kubernetes-compatible implementations 
 
 `recordTypeGroup` and `recordType` together identify the kind of thing represented by the Record, in the same way a Kubernetes API group and kind identify a resource type:
 
-- **`recordTypeGroup`** owns the type, such as `network.example.org`. Like `shapeGroup`, it is required, MUST be a lowercase RFC 1123 DNS subdomain, and is a claim rather than proof that the Publisher controls the domain.
+- **`recordTypeGroup`** owns the type, such as `network.example.org`. Like `shapeGroup`, it is required, MUST be a lowercase RFC 1123 DNS subdomain, and is a claim rather than proof that the Publisher controls the domain, which implementations SHOULD authorize (see [Group and Relationship Authorization](#group-and-relationship-authorization)).
 - **`recordType`** names the type within that group, such as `subnet`, `supported-eks-versions`, or `cloud-region`.
 
 Two Publishers may each publish `subnet` Records: `network.example.org/subnet` and `storage.example.org/subnet` are different types.
@@ -378,7 +378,7 @@ A Schema names the contract lineage it belongs to using three fields, modeled on
 
 A lineage is identified by `shapeGroup` and `shape` together. Two Publishers may each define a `subnet` shape: `network.example.org/subnet` and `storage.example.org/subnet` are different lineages.
 
-`shapeGroup` is required and MUST be a lowercase RFC 1123 DNS subdomain. The `records.crossplane.io` group is reserved for contracts defined by this specification. As with `publisher.id`, a `shapeGroup` is a claim, not proof that the Publisher controls that domain.
+`shapeGroup` is required and MUST be a lowercase RFC 1123 DNS subdomain. The `records.crossplane.io` group is reserved for contracts defined by this specification. As with `publisher.id`, a `shapeGroup` is a claim, not proof that the Publisher controls that domain; implementations SHOULD authorize it when a Schema is written (see [Group and Relationship Authorization](#group-and-relationship-authorization)).
 
 Unlike a Kubernetes API version, which has exactly one schema, a `shapeVersion` may contain several Schemas. Each is an immutable revision identified by its digest, such as a revision that adds an optional field.
 
@@ -467,7 +467,7 @@ To limit the reach of a claim:
 - a `Schema` MUST replace only `Schema`s in its own namespace; and
 - a `ClusterSchema` MUST replace only `ClusterSchema`s.
 
-Implementations SHOULD also require that whoever declares `replaces` is authorized to modify the Schemas it names. On Kubernetes-compatible implementations this can be enforced at admission. Even then, `successor` remains the relationship Consumers follow.
+Implementations SHOULD also require that whoever declares `replaces` is authorized to modify the Schemas it names. On Kubernetes-compatible implementations this can be enforced at admission (see [Group and Relationship Authorization](#group-and-relationship-authorization)). Even then, `successor` remains the relationship Consumers follow.
 
 ### Deprecation
 
@@ -818,6 +818,40 @@ publisher:
 ```
 
 identifies the claimed Publisher but does not establish that the object was actually created by the network team.
+
+## Group and Relationship Authorization
+
+Several fields are claims one party makes about names or objects that may belong to another:
+
+| Claim | Made by | About |
+| --- | --- | --- |
+| `shapeGroup` | a Schema's author | the owner of a lineage |
+| `recordTypeGroup` | a Record's or RecordSet's author | the owner of a record type |
+| `replaces` | a successor Schema's author | another Schema |
+
+Unchecked, anyone who can create a Schema can join another team's lineage, publish Records of another team's type, or claim to succeed another team's Schema. Field selectors and Consumers then cannot tell the forged objects from the real ones.
+
+Implementations SHOULD authorize these claims when an object is written:
+
+- publishing a Schema under a `shapeGroup`, or a Record or RecordSet under a `recordTypeGroup`, requires permission to publish under that group;
+- adding an entry to `replaces` requires permission to modify the Schema it names; and
+- permission to publish under the reserved `records.crossplane.io` group is held only by the implementation.
+
+On Kubernetes-compatible implementations, these checks SHOULD be ValidatingAdmissionPolicies that use the CEL `authorizer`, so that permission is ordinary RBAC:
+
+- Publishing under a group is the verb `publish` on the resource `groups` in the `records.crossplane.io` API group, with the group as the resource name. The resource is not served; RBAC rules may name it regardless, as `certificates.k8s.io` does for `signers`. For example, this rule grants publishing under `network.example.org`:
+
+  ```yaml
+  rules:
+    - apiGroups: ["records.crossplane.io"]
+      resources: ["groups"]
+      resourceNames: ["network.example.org"]
+      verbs: ["publish"]
+  ```
+
+- Claiming to replace a Schema requires the verb `update` on that Schema. Entries already present in `replaces` are not re-checked, so an author can keep editing a Schema whose `replaces` someone else set.
+
+Authorization happens where an object is written. It does not travel with an object copied to another cluster, where Consumers again have only claims. That is why Consumers discover successors through `successor`, which the predecessor's own Publisher sets, rather than through `replaces`.
 
 ## Summary
 

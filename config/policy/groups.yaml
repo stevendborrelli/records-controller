@@ -1,0 +1,70 @@
+# Publishing under a shapeGroup or recordTypeGroup requires permission to use
+# that group. records.crossplane.io/groups is not a served resource: RBAC rules
+# on it, with the group as the resource name and the verb "publish", grant the
+# right to publish under a group. For example:
+#
+#   rules:
+#     - apiGroups: ["records.crossplane.io"]
+#       resources: ["groups"]
+#       resourceNames: ["network.example.org"]
+#       verbs: ["publish"]
+#
+# The records.crossplane.io group is reserved for contracts the specification
+# defines, so only the controller should be granted it.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: records-shapegroup-publish
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["records.crossplane.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE"]
+        resources: ["schemas", "clusterschemas"]
+  validations:
+    - expression: >-
+        authorizer.group('records.crossplane.io').resource('groups')
+        .name(object.spec.shapeGroup).check('publish').allowed()
+      messageExpression: >-
+        'not authorized to publish under shapeGroup ' + object.spec.shapeGroup +
+        ': requires the publish verb on records.crossplane.io groups named ' + object.spec.shapeGroup
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: records-shapegroup-publish
+spec:
+  policyName: records-shapegroup-publish
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: records-recordtypegroup-publish
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["records.crossplane.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE"]
+        resources: ["records", "recordsets"]
+  validations:
+    - expression: >-
+        authorizer.group('records.crossplane.io').resource('groups')
+        .name(object.spec.recordTypeGroup).check('publish').allowed()
+      messageExpression: >-
+        'not authorized to publish under recordTypeGroup ' + object.spec.recordTypeGroup +
+        ': requires the publish verb on records.crossplane.io groups named ' + object.spec.recordTypeGroup
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: records-recordtypegroup-publish
+spec:
+  policyName: records-recordtypegroup-publish
+  validationActions: [Deny]

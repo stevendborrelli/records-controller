@@ -26,6 +26,14 @@ rules:
   - update
 - apiGroups:
   - records.crossplane.io
+  resourceNames:
+  - records.crossplane.io
+  resources:
+  - groups
+  verbs:
+  - publish
+- apiGroups:
+  - records.crossplane.io
   resources:
   - records
   - recordsets

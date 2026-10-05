@@ -2,7 +2,9 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,7 +17,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,8 +31,15 @@ import (
 	"github.com/stevendborrelli/records-controller/api/v1alpha1"
 )
 
-// k8s is a direct, uncached client to the envtest API server.
+// k8s is a direct, uncached client to the envtest API server. It
+// authenticates as a cluster administrator.
 var k8s client.Client
+
+// testEnv is the envtest environment, used to add non-administrator users.
+var testEnv *envtest.Environment
+
+// testScheme is the scheme every test client uses.
+var testScheme *runtime.Scheme
 
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
@@ -55,14 +66,20 @@ func run(m *testing.M) int {
 		return 1
 	}
 	defer env.Stop() //nolint:errcheck // Best effort.
+	testEnv = env
 
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
+	testScheme = scheme
 
 	k8s, err = client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot create client: %v\n", err)
+		return 1
+	}
+	if err := installPolicies(filepath.Join("..", "..", "config", "policy")); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot install admission policies: %v\n", err)
 		return 1
 	}
 
@@ -88,6 +105,44 @@ func run(m *testing.M) int {
 	}()
 
 	return m.Run()
+}
+
+// installPolicies creates the ValidatingAdmissionPolicies and bindings in
+// dir. They take effect shortly after creation, so tests that depend on them
+// poll.
+func installPolicies(dir string) error {
+	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if filepath.Base(f) == "kustomization.yaml" {
+			continue
+		}
+		r, err := os.Open(f)
+		if err != nil {
+			return err
+		}
+		d := yaml.NewYAMLOrJSONDecoder(r, 4096)
+		for {
+			u := &unstructured.Unstructured{}
+			if err := d.Decode(u); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				r.Close() //nolint:errcheck // Read-only.
+				return fmt.Errorf("cannot decode %s: %w", f, err)
+			}
+			if len(u.Object) == 0 {
+				continue
+			}
+			if err := k8s.Create(context.Background(), u); err != nil {
+				r.Close() //nolint:errcheck // Read-only.
+				return fmt.Errorf("cannot create %s %s: %w", u.GetKind(), u.GetName(), err)
+			}
+		}
+		r.Close() //nolint:errcheck // Read-only.
+	}
+	return nil
 }
 
 // binaryAssets returns the newest envtest binaries installed by setup-envtest.

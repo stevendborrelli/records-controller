@@ -6,7 +6,7 @@ holds up:
 
 - `Schema` and `ClusterSchema`: an immutable contract (`format` and
   `definition`) in a named lineage (`shapeGroup`, `shape`, `shapeVersion`),
-  plus mutable `replaces` and `deprecation`, with a contract digest and a
+  plus mutable `successor`, `replaces`, and `deprecation`, with a contract digest and a
   structural digest.
 - `Record`: an immutable, schema-bound snapshot with optional
   Publisher-asserted digests.
@@ -30,6 +30,8 @@ Not implemented: inline schemas, `expiresAt`, and `phase`.
 | Digests are well formed (`sha256:` + 64 hex) | CRD pattern |
 | `deprecation.date` is an RFC 3339 full-date | CRD `format: date` |
 | `replaces` stays in scope: a Schema replaces only Schemas in its namespace, a ClusterSchema only ClusterSchemas; a ClusterSchema's `successor` is a ClusterSchema | CRD CEL rules |
+| Publishing under a `shapeGroup` or `recordTypeGroup` requires the `publish` verb on `records.crossplane.io` `groups` with that name; only the controller may publish under `records.crossplane.io` | ValidatingAdmissionPolicy (`config/policy`) and RBAC |
+| Adding a `replaces` entry requires `update` on the Schema it names | ValidatingAdmissionPolicy (`config/policy`) and RBAC |
 | Versions are unique and positive | CRD list-map keys and minimum |
 | `current` is published and not retracted; retracted versions are published | CRD CEL rules |
 | New versions are higher than existing ones; published entries are immutable | CRD CEL transition rules |

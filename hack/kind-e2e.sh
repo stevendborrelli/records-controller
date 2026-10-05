@@ -431,6 +431,75 @@ recordset bad-structural 4 "    - version: 4
 expect_condition "Structural digest mismatch is detected" "$NS" recordset bad-structural Ready False/InvalidVersions
 
 # ---------------------------------------------------------------------------
+step "Authorization"
+# e2e-tenant may author Records kinds and publish under tenant.example.org
+# only. Requests impersonate it, and use server-side dry run.
+cat <<EOF | k apply -f - >/dev/null
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: records-e2e-tenant
+rules:
+  - apiGroups: [records.crossplane.io]
+    resources: [schemas, clusterschemas, records, recordsets]
+    verbs: [create, get]
+  - apiGroups: [records.crossplane.io]
+    resources: [groups]
+    resourceNames: [tenant.example.org]
+    verbs: [publish]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: records-e2e-tenant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: records-e2e-tenant
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: e2e-tenant
+EOF
+
+tenant_schema() { # name shape-group [replaces-schema]
+	cat <<EOF
+apiVersion: records.crossplane.io/v1alpha1
+kind: Schema
+metadata:
+  name: $1
+  namespace: $NS
+spec:
+  publisher:
+    id: team-tenant
+  shapeGroup: $2
+  shape: subnet
+  shapeVersion: v1
+  format: StructuralSchema
+  definition:
+    type: object
+${3:+  replaces: [{kind: Schema, name: $3\}]}
+EOF
+}
+as_tenant() { # name shape-group [replaces-schema]
+	tenant_schema "$@" | k --as=e2e-tenant create --dry-run=server -f -
+}
+
+allowed=""
+for _ in $(seq 1 30); do
+	as_tenant tenant-v1 tenant.example.org >/dev/null 2>&1 && { allowed=1; break; }
+	sleep 1
+done
+[[ -n $allowed ]] && pass "A tenant can publish under its own group" ||
+	fail "A tenant can publish under its own group" "$(as_tenant tenant-v1 tenant.example.org 2>&1)"
+expect_rejected "Publishing under another team's shapeGroup is denied" "not authorized to publish under shapeGroup network.example.org" \
+	as_tenant tenant-v1 network.example.org
+expect_rejected "The reserved records.crossplane.io group is denied" "not authorized to publish under shapeGroup records.crossplane.io" \
+	as_tenant tenant-v1 records.crossplane.io
+expect_rejected "Claiming to replace another team's Schema is denied" "replaces may name only Schemas the requester is authorized to update" \
+	as_tenant tenant-v2 tenant.example.org subnet-v1
+
+# ---------------------------------------------------------------------------
 step "Result"
 printf '  %d passed, %d failed\n' "$passed" "$failed"
 
