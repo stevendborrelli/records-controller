@@ -58,6 +58,10 @@ make kind-e2e
 which creates a kind cluster, deploys the controller, and runs the end-to-end
 checks in `hack/kind-e2e.sh`.
 
+[docs/environmentconfig-migration.md](docs/environmentconfig-migration.md)
+walks through migrating a Crossplane EnvironmentConfig to Records, step by
+step, as an acceptance scenario for the controller.
+
 ## Development
 
 ```sh
